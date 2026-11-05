@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "configured": false,
+  "appNamespace": "tool-city.workshop.v1",
+  "sourceLang": "en",
+  "targetLang": "hi",
+  "maxWords": 250,
+  "maxChars": 5000,
+  "arkiv": {
+    "chainId": 7794095,
+    "rpcUrl": "https://rpc.rabdi.db-chain.testnet.arkiv.network",
+    "explorerUrl": "https://rabdi.explorer.arkiv.network"
+  },
+  "whitechain": {
+    "chainId": 1874,
+    "rpcUrl": "https://rpc.testnet.whitechain.io",
+    "explorerUrl": "https://explorer.testnet.whitechain.io",
+    "tokenAddress": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7"
+  },
+  "terms": null,
+  "serviceTermsText": "Tool City translation service v1\nOne merchant-funded private inference translation of a short English draft into Hindi.\nMaximum input: 250 words, 5000 characters, 20 nonempty paragraphs.\nThe buyer reviews and may edit the result; translation accuracy is not guaranteed.\nThe application backend receives and stores the source and result privately.\nOne fixed price of 1 official test USDT on Whitechain Sepolia; test tokens have no monetary value.\nOne initial attempt and at most one eligible manual retry; paid failures remain visible.\nNo automatic refund mechanism. Reopening a saved paid job does not require a second purchase.\n"
+}

@@ -1,0 +1,8 @@
+Tool City translation service v1
+One merchant-funded private inference translation of a short English draft into Hindi.
+Maximum input: 250 words, 5000 characters, 20 nonempty paragraphs.
+The buyer reviews and may edit the result; translation accuracy is not guaranteed.
+The application backend receives and stores the source and result privately.
+One fixed price of 1 official test USDT on Whitechain Sepolia; test tokens have no monetary value.
+One initial attempt and at most one eligible manual retry; paid failures remain visible.
+No automatic refund mechanism. Reopening a saved paid job does not require a second purchase.

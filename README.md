@@ -6,7 +6,9 @@ Built for **ETHGlobal Mumbai 2026** by a two-person team.
 
 ## Status
 
-Initial project setup. The application and sponsor integrations are planned and have not been implemented or validated yet.
+Backend foundation in development on `codex/payment-backend`. Local contract/server checks and the production build pass. Live sponsor integrations and the teammate's city/Arkiv UI are not complete; this is not a working paid translation demo yet.
+
+The current browser page and checkout example are explicitly disabled bootstrap shells. The backend fails closed until a real deployment and Arkiv reader are integrated.
 
 ## The idea
 
@@ -23,7 +25,7 @@ Our first workshop will translate short English drafts into Hindi. An isometric 
 5. Review and edit corresponding source/translation segments, then export TXT or JSON.
 6. Reopen the existing paid job without buying it again.
 
-## Planned stack
+## Stack
 
 - **Interface:** Next.js, React, SVG and CSS animations.
 - **Discovery:** wallet-owned workshop records on Arkiv.
@@ -39,6 +41,52 @@ One builder owns contracts, backend, payment verification and 0G. The other owns
 
 ## Development
 
-Setup instructions, deployment addresses, integration evidence and demo links will be added as implementation progresses. No runnable application is included in this initial commit.
+Requires **Node.js 24** and npm. From the repository root:
 
-AI coding tools assist our planning and development. This initial README was prepared with Codex; implementation-specific attribution will be documented as work is completed.
+```bash
+npm ci
+cp .env.example .env.local
+```
+
+Configure a local `SESSION_SECRET` before using authenticated APIs; follow [live setup from zero](docs/SETUP-LIVE-INTEGRATIONS.md) for wallet funding and 0G access. Do not commit credentials. Then:
+
+```bash
+npm run dev
+```
+
+Validation commands:
+
+```bash
+npm run contracts:compile
+npm run test:contracts
+npm run test:server
+npm run lint
+npm run typecheck
+npm run build
+npm run smoke:local
+```
+
+`npm run contracts:compile` exports the ABI from the actual compiled contract. First compilation may download the official Solidity compiler. `npm run build` packages the independent checkout example and prepares Next standalone public/static assets; `npm start` runs that build. Production requires HTTPS configuration and a persistent `DATABASE_PATH` on one Node instance.
+
+## Implemented backend foundation
+
+- Nonce-bound wallet authentication, sessions and origin checks.
+- Durable SQLite jobs, immutable source/accepted terms, separate saved edits and buyer-only recovery.
+- Fixed-service checkout contract, generated ABI and adversarial local tests.
+- Server receipt, token-settlement and purchase-state verification.
+- Private 0G request adapter, bounded responses, durable execution leases and two-attempt limit.
+- Merchant-only settlement JSON/CSV without buyer text.
+
+Local tests use explicit doubles and test tokens; they do not establish official-token settlement, model availability, translation quality or sponsor eligibility. The confirmed-purchase cache does not implement later chain-reorg rollback; wallet authentication currently covers EOA signatures. The backend sees the draft. These limitations and remaining gates are recorded in the handoff.
+
+## Agent plan and handoff
+
+- [Staged backend plan and model/reasoning assignments](docs/san-backend-payments.md)
+- [Common structure/API contract](docs/briefs/TOOL-CITY-COMMON-STRUCTURE.md)
+- [Teammate's frontend/Arkiv assignment](docs/briefs/TOOL-CITY-TEAMMATE-FRONTEND-STRUCTURE.md)
+- [Actual checks and pending live gates](docs/backend-handoff.md)
+- [Integration checklist](docs/integration-checklist.md)
+
+No main promotion until the full readiness checklist passes, including real Arkiv publication, verified Whitechain deployment/official-token purchase, useful private 0G output and complete UI/recovery integration. Deployment addresses and evidence will be added only after actual operations.
+
+Codex assists planning and implementation. This foundation used a GPT-6.1 Sol technical coordinator (high reasoning), GPT-6.1 Terra for contract implementation/testing (high), and GPT-6 Luna for bounded handoff/checklist documentation (medium), with integration and review by the main agent. The teammate's frontend work is separate; no finished city implementation is claimed here.

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+coverage/
+artifacts/
+cache/
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+.env*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+public/checkout-demo/
