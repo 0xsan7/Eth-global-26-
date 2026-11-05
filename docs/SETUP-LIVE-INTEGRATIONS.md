@@ -93,3 +93,18 @@ Hindi reviewer: available / not yet
 ```
 
 After these prerequisites, the next live gates are actual contract deployment/verification, an official-token purchase, a real owner-published workshop and useful private translations. Until those and the rest of the readiness checklist pass, development remains on the feature branch.
+
+## Publish this feature branch
+
+The initial README was pushed using a one-command credential-cache bypass. That did not save a credential for later agent pushes. The local repo now has `credential.useHttpPath=true` and username `0xsan7`, so credentials can be scoped to this repository.
+
+Run this yourself in Terminal once, and paste the existing fine-grained GitHub token only at its password prompt:
+
+```bash
+cd "/Users/santiagojerald/Desktop/Eth Global/tool-city"
+git -c credential.helper= -c credential.helper=osxkeychain push -u origin codex/payment-backend
+```
+
+This resets the helper list for that command, uses macOS Keychain and can save the successful repository-scoped credential. Do not paste the token into chat or put it in the command/remote URL. If GitHub rejects it, verify the existing selected-repository Contents read/write permission. This publishes the feature branch; it does not merge main.
+
+After the branch is actually published, the teammate starts their frontend branch from this shared baseline and follows the common ownership contract.
