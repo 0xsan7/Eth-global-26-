@@ -41,4 +41,4 @@ One builder owns contracts, backend, payment verification and 0G. The other owns
 
 Setup instructions, deployment addresses, integration evidence and demo links will be added as implementation progresses. No runnable application is included in this initial commit.
 
-AI coding tools assist our planning and development. This initial README was prepared with Codex; implementation-specific attribution will be documented as work is completed.
+AI coding tools assist our planning and development. This initial README was prepared with Codex; implementation-specific attribution will be documented as work is completed .
