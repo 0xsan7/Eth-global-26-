@@ -1,5 +1,5 @@
 "use client";
-// Home: BriefMint city — real opportunity discovery (independent Arkiv reads
+// Home: BriefMint city, real opportunity discovery (independent Arkiv reads
 // with backend list when available) plus the city and selected-building panel.
 // Loading / failed / empty states stay distinct; a failed refresh never proves
 // withdrawal, expiry, or deletion.
@@ -62,7 +62,7 @@ export default function HomePage() {
       if (epoch !== opportunityReadEpoch.current) return;
       if (opportunityRowCount.current > 0) {
         setOppStale(true);
-        setOppError("Arkiv query failed — showing last confirmed list (stale). This does not mean records were withdrawn.");
+        setOppError("Arkiv query failed, showing last confirmed list (stale). This does not mean records were withdrawn.");
       } else {
         setOppError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn or expired.");
       }
@@ -82,7 +82,7 @@ export default function HomePage() {
         if (cancelled) return;
         setBriefConfigError(
           isApiError(e) && (e.status === 503 || e.code === "SERVICE_UNAVAILABLE")
-            ? "BriefMint backend unavailable (503) — public discovery continues via the independent Arkiv reader."
+            ? "BriefMint backend unavailable (503), public discovery continues via the independent Arkiv reader."
             : "BriefMint config unavailable.",
         );
       }
@@ -201,7 +201,7 @@ export default function HomePage() {
   const openCount = opportunities.filter((o) => o.status === "open").length;
   const idleHint =
     brief?.executionStatus === "running"
-      ? "Compiling — polling the saved record"
+      ? "Compiling, polling the saved record"
       : brief?.publication.status === "pending"
         ? "Waiting for on-chain confirmation"
         : "Follow the worker to continue";
@@ -211,7 +211,7 @@ export default function HomePage() {
 
   return (
     <div className="city-page">
-      <h1 className="sr-only">BriefMint — private notes to public opportunity</h1>
+      <h1 className="sr-only">BriefMint, private notes to public opportunity</h1>
       <CityScene
         selected={building}
         onSelect={setBuilding}

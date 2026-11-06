@@ -1,5 +1,5 @@
 "use client";
-// Independent opportunity reader — works while the BriefMint API is stopped.
+// Independent opportunity reader, works while the BriefMint API is stopped.
 // Takes an explicit Arkiv access key (operator-provided public rate-limit key,
 // never committed) and no backend session. Failed reads are distinct from an
 // empty catalogue.
@@ -31,7 +31,7 @@ export default function OpportunityReader() {
       setRows(list);
     } catch {
       setRows(null);
-      setError("Independent Arkiv query failed — the reader, key, or RPC is unavailable. This does not prove records were deleted.");
+      setError("Independent Arkiv query failed, the reader, key, or RPC is unavailable. This does not prove records were deleted.");
     } finally {
       setBusy(false);
     }
@@ -84,7 +84,7 @@ export default function OpportunityReader() {
         <input id="reader-entity" type="text" value={entityKey} onChange={(e) => setEntityKey(e.target.value)} disabled={busy} placeholder="0x…" />
       </div>
       <button type="button" className="btn" onClick={readOne} disabled={busy}>Read single record</button>
-      {single && <p className="notice">Found: {single.title} ({single.status}, r{single.revision}) — owner <span className="tc-mono">{single.ownerAddress}</span>.</p>}
+      {single && <p className="notice">Found: {single.title} ({single.status}, r{single.revision}), owner <span className="tc-mono">{single.ownerAddress}</span>.</p>}
     </div>
   );
 }

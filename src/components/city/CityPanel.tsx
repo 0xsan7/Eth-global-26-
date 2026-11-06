@@ -1,5 +1,5 @@
 "use client";
-// CityPanel: detail panel for the selected building — BriefMint workflow.
+// CityPanel: detail panel for the selected building, BriefMint workflow.
 // Registry → indexed opportunities + owner publication; Home (Planning Desk id)
 // → private intake; Release Desk (treasury id) → exact preview + approval;
 // Studio → compilation; Archive → persisted briefs. Geometry and styling unchanged.
@@ -85,7 +85,7 @@ function HomeBody(p: CityPanelProps) {
         <span className="tc-mono">{p.brief.id.slice(0, 18)}…</span>
       </p>
       <p className="tc-muted">
-        {p.brief.publicParameters.title} — r{p.brief.draftRevision} · {p.brief.review.status}
+        {p.brief.publicParameters.title}, r{p.brief.draftRevision} · {p.brief.review.status}
       </p>
       <Link className="btn btn-primary" href={`/briefs/${p.brief.id}`}>Open brief</Link>
     </div>
@@ -107,7 +107,7 @@ function ReleaseBody(p: CityPanelProps) {
 
 function StudioBody(p: CityPanelProps) {
   const { brief } = p;
-  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Planning Desk first.</p>;
+  if (!brief) return <p className="tc-muted">No brief yet, save private notes at the Creator&apos;s Home first.</p>;
   const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
   return (
     <div>
@@ -128,7 +128,7 @@ function StudioBody(p: CityPanelProps) {
 function ArchiveBody(p: CityPanelProps) {
   return (
     <div>
-      <p className="tc-muted">Owner-authenticated private briefs. Reopening loads saved content — never recompiles.</p>
+      <p className="tc-muted">Owner-authenticated private briefs. Reopening loads saved content, never recompiles.</p>
       <div className="btn-row">
         <Link className="btn btn-primary" href="/briefs">My Briefs</Link>
         {p.brief && <Link className="btn" href={`/briefs/${p.brief.id}`}>Current brief</Link>}

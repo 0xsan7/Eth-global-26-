@@ -1,4 +1,4 @@
-// Independent Arkiv opportunity reader — functions without the BriefMint API.
+// Independent Arkiv opportunity reader: functions without the BriefMint API.
 // Thin wrapper over the canonical adapter (src/lib/arkiv/briefmint/read.ts)
 // with explicit access-key configuration supplied by the caller (UI input or
 // operator). Never imports private API, session, or wallet code, so public

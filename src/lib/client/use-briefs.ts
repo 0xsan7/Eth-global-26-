@@ -1,5 +1,5 @@
 "use client";
-// BriefMint hooks — Agent B owned. Polling follows the canonical state model:
+// BriefMint hooks: Agent B owned. Polling follows the canonical state model:
 // poll GET brief ~2s only while execution is `running` or publication status
 // is `pending`; terminal/live/closed/expired states use cache + focus.
 // `run` fires only from an explicit user action, never on mount or refresh.

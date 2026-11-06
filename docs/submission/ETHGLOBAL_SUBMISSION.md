@@ -4,7 +4,7 @@
 
 ## Project name and tagline
 
-**BriefMint** — Turn private working notes into a public opportunity only after the owner reviews and approves it.
+**BriefMint**: Turn private working notes into a public opportunity only after the owner reviews and approves it.
 
 ## Short description (about 250 characters)
 
@@ -77,7 +77,7 @@ No eligibility or award is asserted. The [Arkiv prizes](https://ethglobal.com/ev
 
 - **Repository:** [GitHub branch](https://github.com/0xsan7/Eth-global-26-/tree/codex/briefmint-integration-fixes) *(confirm branch is public and current at submission time)*
 - **Team contact:** `[ADD CONFIRMED TEAM NAMES AND CONTACT DETAILS]`
-- **Live demo:** `[ADD VERIFIED PUBLIC DEMO URL — none established]`
+- **Live demo:** `[ADD VERIFIED PUBLIC DEMO URL, none established]`
 - **Video (under 3 minutes):** `[ADD VIDEO URL AFTER RECORDING]`
 - **Evidence:** [live demo evidence](../evidence/LIVE_DEMO.md)
 - **Local UI:** `http://127.0.0.1:3001` *(local operator environment, not a public demo link)*

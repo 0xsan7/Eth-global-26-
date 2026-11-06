@@ -68,11 +68,11 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
         <input id="opp-query" type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. launch graphics" />
       </div>
       {p.lastRefresh && <p className="tc-muted">Last successful refresh: {new Date(p.lastRefresh).toLocaleString()}</p>}
-      {p.stale && !p.loading && <p className="notice" role="status">Showing last confirmed list (stale) — the catalogue could not be refreshed.</p>}
+      {p.stale && !p.loading && <p className="notice" role="status">Showing last confirmed list (stale), the catalogue could not be refreshed.</p>}
       {p.loading && <p className="tc-muted">Querying Arkiv indexed records…</p>}
       {p.error && !p.loading && <p className="error" role="alert">{p.error}</p>}
       {!p.loading && !p.error && p.opportunities.length === 0 && (
-        <p className="tc-muted">No opportunities published yet — the public catalogue is empty (not an error).</p>
+        <p className="tc-muted">No opportunities published yet, the public catalogue is empty (not an error).</p>
       )}
       {!p.loading && !p.error && p.opportunities.length > 0 && visible.length === 0 && (
         <p className="tc-muted">No records match the current filters.</p>

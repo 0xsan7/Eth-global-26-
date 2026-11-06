@@ -1,8 +1,8 @@
 "use client";
-// Wallet + session controls — Agent B owned. Connect the project-owner wallet,
+// Wallet + session controls, Agent B owned. Connect the project-owner wallet,
 // switch between Rabdi (Arkiv publication) and Whitechain (legacy checkout),
 // sign in/out of the cookie session, and wrong-network hints. The wallet's
-// private key is never requested or handled — signing happens in the wallet.
+// private key is never requested or handled, signing happens in the wallet.
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { usePathname } from "next/navigation";
 import { useLogin, useLogout, useSession } from "@/lib/client/use-session";
@@ -68,7 +68,7 @@ export default function WalletControls({
         <div className="wallet-row">
           <span className="wallet-chip" title={address}>
             <span className="wallet-dot" aria-hidden="true" />
-            {address ? truncateAddress(address) : "—"} <span className="wallet-chain">{chainLabel(chainId)}</span>
+            {address ? truncateAddress(address) : "-"} <span className="wallet-chain">{chainLabel(chainId)}</span>
           </span>
           {legacyScreen && <>
           <button

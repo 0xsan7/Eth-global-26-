@@ -37,7 +37,7 @@ export default function OpportunitiesPage() {
       if (epoch !== readEpoch.current) return;
       if (rowCount.current > 0) {
         setStale(true);
-        setError("Arkiv query failed — showing last confirmed list (stale).");
+        setError("Arkiv query failed, showing last confirmed list (stale).");
       } else {
         setError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn.");
       }

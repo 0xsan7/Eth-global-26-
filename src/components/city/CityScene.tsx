@@ -102,13 +102,13 @@ const DIM_LABELS: Array<{ key: string; label: string; value: (c: CityState) => s
   {
     key: "review",
     label: "Review",
-    value: (c) => (c.release === "idle" ? "—" : c.release),
+    value: (c) => (c.release === "idle" ? "-" : c.release),
     tone: (c) => (c.release === "approved" ? "ok" : c.release === "awaiting" ? "info" : "plain"),
   },
   {
     key: "pub",
     label: "Publish",
-    value: (c) => (c.registry === "none" ? "—" : c.registry),
+    value: (c) => (c.registry === "none" ? "-" : c.registry),
     tone: (c) =>
       c.registry === "live" ? "ok" : c.registry === "stale" || c.registry === "unavailable" ? "warn" : c.registry === "pending" ? "info" : "plain",
   },

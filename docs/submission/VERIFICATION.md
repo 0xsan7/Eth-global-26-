@@ -1,4 +1,4 @@
-# Submission documentation checkpoint — 7 November 2026 IST
+# Submission documentation checkpoint: 7 November 2026 IST
 
 Base: `79be23a` on `codex/briefmint-integration-fixes`. This change updates presentation and setup examples, not runtime business logic. The final documentation commit follows this base; use Git history for its exact identity.
 

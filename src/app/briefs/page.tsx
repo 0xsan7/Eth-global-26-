@@ -25,7 +25,7 @@ export default function BriefsPage() {
       <p className="notice">Connect the project-owner wallet and sign in to see private briefs.</p>
     ) : isApiError(e) && (e.status === 503 || e.code === "SERVICE_UNAVAILABLE") ? (
       <p className="notice" role="status">
-        BriefMint backend unavailable (503) — private briefs cannot be listed yet. Nothing was fabricated; no fixture substituted.
+        BriefMint backend unavailable (503), private briefs cannot be listed yet. Nothing was fabricated; no fixture substituted.
       </p>
     ) : (
       <p className="error" role="alert">
@@ -40,7 +40,7 @@ export default function BriefsPage() {
     <AppShell>
       <div className="tc-page">
         <h1>My Briefs</h1>
-        <p className="tc-muted">Owner-only. Reopening a brief loads saved content — never recompiles.</p>
+        <p className="tc-muted">Owner-only. Reopening a brief loads saved content, never recompiles.</p>
         {body}
       </div>
     </AppShell>

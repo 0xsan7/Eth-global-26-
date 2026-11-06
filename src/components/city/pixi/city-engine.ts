@@ -1,5 +1,5 @@
 // Tool City game renderer (PixiJS 8): a full-screen isometric tile island you can
-// pan and zoom. Everything is drawn procedurally — no external images or fonts.
+// pan and zoom. Everything is drawn procedurally, no external images or fonts.
 // The engine only READS CityState; it never calls the API, the wallet or React state.
 // Walks, stamps and pulses are decoration triggered by observed state changes.
 import { Application, Container, Graphics, Text, type TextStyleFontWeight } from "pixi.js";
@@ -309,7 +309,7 @@ export class CityEngine {
     this.app.destroy({ removeView: true }, { children: true });
   }
 
-  // ---------- camera ----------
+  // camera
 
   private viewport() {
     const w = this.host.clientWidth || 800;
@@ -441,7 +441,7 @@ export class CityEngine {
     });
   }
 
-  // ---------- public API (presentation only) ----------
+  // public API (presentation only)
 
   setMotion(mode: MotionMode) {
     this.mode = mode;
@@ -520,7 +520,7 @@ export class CityEngine {
     this.ripples.push({ g, start: this.t });
   }
 
-  // ---------- scene construction ----------
+  // scene construction
 
   private build() {
     this.app.stage.addChild(this.world);
@@ -1256,7 +1256,7 @@ export class CityEngine {
     this.decor = d;
   }
 
-  // ---------- frame update (writes display objects only) ----------
+  // frame update (writes display objects only)
 
   private requestRender() {
     if (this.mode !== "on") this.app.render();
