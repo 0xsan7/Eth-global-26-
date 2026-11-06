@@ -95,14 +95,22 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
     <div className="card">
       <h3>Private notes intake</h3>
       <p className="tc-muted">
-        Rough notes stay private to you and the backend. Only the approved public fields below may be published.
-        Compilation is funded by promotional credits — no purchase, no bounty payout.
+        Rough notes stay private to you and the backend. Only approved public fields may be published.
       </p>
+      <details className="hud-learn">
+        <summary>Learn more</summary>
+        <p className="tc-muted">
+          Compilation is funded by promotional credits — no purchase, no bounty payout. Advertised budgets
+          are unfunded: BriefMint never holds or moves funds. Source IDs and private details never leave
+          the private brief; the public preview shows exactly what a publication would contain.
+        </p>
+      </details>
       <div className="form-field">
         <label htmlFor="brief-notes">Private notes (blank line = new segment)</label>
-        <textarea id="brief-notes" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
+        <textarea id="brief-notes" aria-describedby="brief-notes-hint brief-notes-counts" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
+        <p className="hud-hint" id="brief-notes-hint">Blank line starts a new segment. Keep private details out of the public fields below.</p>
       </div>
-      <div className="counts">
+      <div className="counts" id="brief-notes-counts">
         <span>Words: {words}/{MAX_BRIEF_WORDS}</span>
         <span>Chars: {chars}/{MAX_BRIEF_CHARS}</span>
         <span>Segments: {segments.length}/{MAX_BRIEF_SEGMENTS}</span>

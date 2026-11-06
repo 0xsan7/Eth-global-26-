@@ -180,20 +180,6 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
 
   return (
     <div className="city-scene" ref={rootRef} data-anim="on">
-      {/* Keyboard-accessible building navigation (buttons). */}
-      <nav className="city-toolbar" aria-label="City buildings">
-        {BUILDINGS_BACK_TO_FRONT.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            className="btn"
-            aria-pressed={selected === b.id}
-            onClick={() => onSelect(b.id)}
-          >
-            {b.name}
-          </button>
-        ))}
-      </nav>
       {fixtureEnabled && (
         <div className="city-fixture" role="group" aria-label="Development fixture preview — not real data">
           <strong>DEV FIXTURE — not real data:</strong>{" "}
@@ -219,24 +205,31 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
         <svg
           viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
           role="group"
-          aria-label="Tool City neighbourhood map. Five buildings around paved streets with one document worker."
+          aria-label="BriefMint island. Five buildings around paved streets with one document worker."
         >
           <desc>
-            {`Registry Hall, Release Desk and AI Studio stand at the back; the Planning Desk and the Archive at the front. `}
+            {`An island with a lighter shoreline on bright blue water. Registry Hall, Release Desk and AI Studio stand at the back; the Planning Desk and the Archive at the front. `}
             {statusText}
           </desc>
-          {/* terrain */}
-          <rect x={0} y={0} width={VIEWBOX.w} height={VIEWBOX.h} fill="#9db38a" />
-          <ellipse cx={110} cy={330} rx={120} ry={60} fill="#8aa176" />
-          <ellipse cx={560} cy={90} rx={140} ry={70} fill="#8aa176" />
-          {/* streets: warm paving */}
-          <rect x={0} y={228} width={VIEWBOX.w} height={38} fill="#d9c39a" />
-          <rect x={0} y={228} width={VIEWBOX.w} height={4} fill="#bfa171" />
-          <rect x={0} y={262} width={VIEWBOX.w} height={4} fill="#bfa171" />
-          <rect x={300} y={110} width={44} height={252} fill="#d9c39a" />
-          <rect x={300} y={110} width={4} height={252} fill="#bfa171" />
-          <rect x={340} y={110} width={4} height={252} fill="#bfa171" />
-          <ellipse cx={320} cy={322} rx={72} ry={30} fill="#d9c39a" stroke="#bfa171" strokeWidth={3} />
+          {/* water */}
+          <rect x={0} y={0} width={VIEWBOX.w} height={VIEWBOX.h} fill="var(--hud-water)" />
+          <clipPath id="hud-island-clip">
+            <ellipse cx={320} cy={230} rx={305} ry={165} />
+          </clipPath>
+          {/* shoreline ring */}
+          <ellipse cx={320} cy={230} rx={315} ry={174} fill="var(--hud-shore)" />
+          {/* island grass */}
+          <ellipse cx={320} cy={230} rx={305} ry={165} fill="var(--hud-grass)" />
+          {/* streets: light grey, same centrelines the worker walks, clipped to the island */}
+          <g clipPath="url(#hud-island-clip)">
+            <rect x={0} y={228} width={VIEWBOX.w} height={38} fill="var(--hud-road)" />
+            <rect x={0} y={228} width={VIEWBOX.w} height={4} fill="#b9c2cc" />
+            <rect x={0} y={262} width={VIEWBOX.w} height={4} fill="#b9c2cc" />
+            <rect x={300} y={110} width={44} height={252} fill="var(--hud-road)" />
+            <rect x={300} y={110} width={4} height={252} fill="#b9c2cc" />
+            <rect x={340} y={110} width={4} height={252} fill="#b9c2cc" />
+            <ellipse cx={320} cy={322} rx={72} ry={30} fill="var(--hud-road)" stroke="#b9c2cc" strokeWidth={3} />
+          </g>
           <GroundAmbient layerRef={groundRef} />
           {/* buildings back-to-front */}
           {BUILDINGS_BACK_TO_FRONT.map((b) => (
@@ -272,16 +265,7 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
           <SkyAmbient layerRef={skyRef} />
         </svg>
       </div>
-      <div className={`city-status${city.worker.unresolved ? " city-status-warn" : ""}`}>
-        <p className="city-caption" role="status" aria-live="polite">
-          {statusText}
-        </p>
-        <p className="city-terms">
-          Compilation uses promotional credits. Any advertised budget is unfunded: BriefMint does not
-          hold or move any funds.
-        </p>
-      </div>
-      {/* Text alternative for the whole scene. */}
+        {/* Text alternative for the whole scene (the visible status lives in the HUD card). */}
       <ul className="sr-only">
         {BUILDINGS_BACK_TO_FRONT.map((b) => {
           const s = stateLabelFor(b.id, city);

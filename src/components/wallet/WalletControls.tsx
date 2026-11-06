@@ -16,6 +16,12 @@ export function truncateAddress(address: string): string {
   return address.length > 10 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
 }
 
+/** Presentation-only friendly names for wallet connectors. No logic depends on these. */
+function connectorLabel(name: string): string {
+  if (/injected/i.test(name)) return "Browser wallet";
+  return name;
+}
+
 function chainLabel(chainId: number | undefined): string {
   if (chainId === WHITECHAIN_ID) return whitechain.name;
   if (chainId === ARKIV_RABDI_ID) return arkivChain.name;
@@ -54,8 +60,9 @@ export default function WalletControls({
               type="button"
               disabled={isConnecting}
               onClick={() => connect({ connector })}
+              title={connectors.length > 1 ? connectorLabel(connector.name) : "Connect your wallet to start"}
             >
-              {isConnecting ? "Connecting…" : `Connect ${connector.name}`}
+              {isConnecting ? "Connecting…" : connectors.length > 1 ? `Connect wallet (${connectorLabel(connector.name)})` : "Connect wallet"}
             </button>
           ))}
         </div>
@@ -68,7 +75,7 @@ export default function WalletControls({
             type="button"
             disabled={isSwitching || chainId === WHITECHAIN_ID}
             onClick={() => switchChain({ chainId: WHITECHAIN_ID })}
-            title="Buyer checkout network"
+            title="Whitechain network (legacy checkout)"
           >
             {whitechain.name}
           </button>
@@ -76,7 +83,7 @@ export default function WalletControls({
             type="button"
             disabled={isSwitching || chainId === ARKIV_RABDI_ID}
             onClick={() => switchChain({ chainId: ARKIV_RABDI_ID })}
-            title="Merchant listing network"
+            title="Arkiv Rabdi network (opportunity publication)"
           >
             {arkivChain.name}
           </button>

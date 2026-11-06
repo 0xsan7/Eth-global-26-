@@ -145,41 +145,107 @@ export default function HomePage() {
   const selectedOpportunity = opportunities.find((o) => o.entityKey === selectedKey) ?? null;
   const scene = briefStateToScene(brief);
 
+  // The single next action for the bottom bar (existing navigation + run handler only).
+  const nextAction: { label: string; run: () => void; busy?: boolean } | null = (() => {
+    if (!brief) return { label: "Start a brief", run: () => setBuilding("home") };
+    if (brief.executionStatus === "draft") {
+      return { label: runBusy ? "Compiling…" : "Compile brief", run: handleRun, busy: runBusy };
+    }
+    if (brief.executionStatus === "failed" || brief.executionStatus === "interrupted") {
+      if (!brief.retryEligible) return null;
+      return { label: runBusy ? "Compiling…" : "Retry compilation", run: handleRun, busy: runBusy };
+    }
+    if (brief.executionStatus === "running") return null;
+    if (brief.executionStatus === "ready" && brief.reviewStatus !== "approved")
+      return { label: "Review and approve", run: () => setBuilding("treasury") };
+    if (brief.publication.lastObservedStatus === "pending") return null;
+    if (brief.publication.lastObservedStatus === "live")
+      return { label: "View live opportunity", run: () => setBuilding("registry") };
+    if (brief.publication.lastObservedStatus === "closed" || brief.publication.lastObservedStatus === "expired")
+      return { label: "View in Archive", run: () => setBuilding("archive") };
+    if (brief.executionStatus === "ready" && brief.reviewStatus === "approved")
+      return { label: "Publish opportunity", run: () => setBuilding("registry") };
+    return null;
+  })();
+
+  const stateWords = brief
+    ? brief.executionStatus === "running"
+      ? "Compilation running — polling the saved record."
+      : brief.publication.lastObservedStatus === "pending"
+        ? "Publication waiting for on-chain confirmation."
+        : brief.publication.lastObservedStatus === "live"
+          ? "Opportunity live on Arkiv."
+          : brief.executionStatus === "ready" && brief.reviewStatus === "approved"
+            ? "Revision approved — ready to publish."
+            : brief.executionStatus === "ready"
+              ? "Compiled — review the public preview."
+              : brief.executionStatus === "draft"
+                ? "Draft saved — ready to compile."
+                : "Compilation needs attention — check retry eligibility."
+    : "No active brief — save notes at the Planning Desk.";
+
   return (
     <AppShell>
-      <div className="tc-page">
-        <h1>BriefMint — private notes to public opportunity</h1>
-        <p className="tc-muted">
-          Turn rough project notes into a reviewed brief and publish only the approved public fields as a
-          wallet-owned Arkiv opportunity. Compilation is quota-funded — no purchase, no bounty payout.
-        </p>
-        {briefConfigError && <p className="notice" role="status">{briefConfigError}</p>}
-        {briefConfig && !briefConfig.ready && (
-          <p className="notice">BriefMint services are not fully ready — intake, compilation, or Arkiv may be unavailable. States below stay honest.</p>
-        )}
-        <div className="city-layout">
-          <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={brief?.executionStatus ?? null} />
-          <CityPanel
-            building={building}
-            briefConfig={briefConfig}
-            briefConfigError={briefConfigError}
-            brief={brief}
-            briefs={briefSummaries}
-            briefsLoading={briefsLoading}
-            opportunities={opportunities}
-            opportunitiesLoading={oppLoading}
-            opportunitiesError={oppError}
-            opportunitiesStale={oppStale}
-            lastRefresh={lastRefresh}
-            onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
-            selectedOpportunity={selectedOpportunity}
-            onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
-            onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}
-            onBriefChange={setBrief}
-            onRunBrief={handleRun}
-            runBusy={runBusy}
-            runError={runError}
-          />
+      <div className="hud-root">
+        <h1 className="sr-only">BriefMint — private notes to public opportunity</h1>
+        <div className="hud-body">
+          <div className="hud-scene-wrap">
+            <details className="hud-status" open>
+              <summary className="hud-status-summary">
+                <span className="hud-status-words">{stateWords}</span>
+                {briefConfigError && <span className="badge badge-stale">BriefMint config unavailable</span>}
+              </summary>
+              <div className="hud-status-body">
+                <p className="hud-status-text">{scene.note}</p>
+                {briefConfigError ? (
+                  <p className="hud-status-config" role="status">{briefConfigError}</p>
+                ) : briefConfig && !briefConfig.ready ? (
+                  <p className="hud-status-config" role="status">
+                    BriefMint services are not fully ready — intake, compilation, or Arkiv may be unavailable. States below stay honest.
+                  </p>
+                ) : briefConfig ? (
+                  <p className="hud-status-config">BriefMint config ready.</p>
+                ) : (
+                  <p className="hud-status-config">Checking BriefMint config…</p>
+                )}
+                <p className="hud-status-credits">Compilation uses promotional credits. Advertised budget is unfunded.</p>
+              </div>
+            </details>
+            <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={brief?.executionStatus ?? null} />
+          </div>
+          <div className="hud-side">
+            <CityPanel
+              building={building}
+              briefConfig={briefConfig}
+              briefConfigError={briefConfigError}
+              brief={brief}
+              briefs={briefSummaries}
+              briefsLoading={briefsLoading}
+              opportunities={opportunities}
+              opportunitiesLoading={oppLoading}
+              opportunitiesError={oppError}
+              opportunitiesStale={oppStale}
+              lastRefresh={lastRefresh}
+              onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
+              selectedOpportunity={selectedOpportunity}
+              onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
+              onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}
+              onBriefChange={setBrief}
+              onRunBrief={handleRun}
+              runBusy={runBusy}
+              runError={runError}
+            />
+          </div>
+        </div>
+        <div className="hud-actionbar" role="status">
+          <span className="hud-actionbar-words">{stateWords}</span>
+          {nextAction ? (
+            <button type="button" className="btn btn-primary hud-action" disabled={nextAction.busy} onClick={nextAction.run}>
+              {nextAction.label}
+            </button>
+          ) : (
+            <span className="hud-muted">{brief?.executionStatus === "running" ? "No action needed — polling the saved record." : "Follow the worker to continue."}</span>
+          )}
         </div>
       </div>
     </AppShell>
