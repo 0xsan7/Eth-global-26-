@@ -268,15 +268,16 @@ export const reconcilePublicationRequestSchema = z.strictObject({
   intentId: briefIdSchema, transactionHash: briefIdSchema.nullable(), entityKey: briefIdSchema.nullable(),
 });
 export const listBriefsQuerySchema = z.strictObject({ beforeId: briefIdSchema.optional() });
-export const exportBriefQuerySchema = z.strictObject({ format: z.enum(["txt", "json"]) });
+/** Omitted audience preserves the original owner-only private download. Public means current approved projection. */
+export const exportBriefQuerySchema = z.strictObject({ format: z.enum(["txt", "json"]), audience: z.enum(["private", "public"]).optional() });
 export const exportBriefResponseSchema = z.strictObject({
-  filename: z.string().regex(/^brief-0x[0-9a-f]{64}\.(txt|json)$/),
+  filename: z.string().regex(/^(brief-0x[0-9a-f]{64}|brief-public-r[1-9][0-9]{0,15})\.(txt|json)$/),
   mediaType: z.enum(["text/plain", "application/json"]), content: z.string().max(200000),
 });
 export function briefApiResultSchema<S extends z.ZodType>(data: S) {
   return z.discriminatedUnion("ok", [z.strictObject({ ok: z.literal(true), data }), z.strictObject({ ok: z.literal(false), error: briefErrorSchema })]);
 }
-/** Request = JSON body, except GET query objects. Routes are a contract, not installed handlers. */
+/** Request = JSON body, except GET query objects. The HTTP handlers implement this registry. */
 export const briefApi = {
   config: { method: "GET", path: "/api/briefmint/config", request: runBriefRequestSchema, response: briefApiResultSchema(briefmintConfigSchema) },
   list: { method: "GET", path: "/api/briefs", request: listBriefsQuerySchema, response: briefApiResultSchema(z.strictObject({ briefs: z.array(briefSummarySchema).max(50), nextBeforeId: briefIdSchema.nullable() })) },
@@ -287,6 +288,7 @@ export const briefApi = {
   approve: { method: "POST", path: "/api/briefs/:id/approve", request: approveBriefRequestSchema, response: briefApiResultSchema(briefViewSchema) },
   prepare: { method: "POST", path: "/api/briefs/:id/publication/prepare", request: preparePublicationRequestSchema, response: briefApiResultSchema(publicationIntentSchema) },
   reconcile: { method: "POST", path: "/api/briefs/:id/publication/reconcile", request: reconcilePublicationRequestSchema, response: briefApiResultSchema(briefViewSchema) },
+  refresh: { method: "POST", path: "/api/briefs/:id/publication/refresh", request: runBriefRequestSchema, response: briefApiResultSchema(briefViewSchema) },
   export: { method: "GET", path: "/api/briefs/:id/export", request: exportBriefQuerySchema, response: briefApiResultSchema(exportBriefResponseSchema) },
 } as const;
 export type BriefApiName = keyof typeof briefApi;

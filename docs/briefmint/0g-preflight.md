@@ -1,6 +1,6 @@
 # 0G first-request preflight
 
-Base backend checkpoint: `a99a0d2`. Scope: necessary smoke safety, compatibility and reporting fixes only. No frontend, private database, payment, Whitechain or Arkiv changes. No API key accessed and no authenticated inference run. Full-PRD completion remains approximately **55%**; catalog inspection does not earn live-inference completion credit.
+Base backend checkpoint: `a99a0d2`. Scope: necessary smoke safety, compatibility and reporting fixes only. No frontend, private database, payment, Whitechain or Arkiv changes in that preflight checkpoint. No API key accessed by the assistant. The operator's one failed authenticated attempt is recorded below. Full-PRD completion at preflight was approximately **55%**; see [the current backend checkpoint](backend-checkpoint.md) for later local implementation progress. Catalog inspection or the failed request earns no live-inference completion credit.
 
 ## Current readiness
 

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import {
   briefIdSchema, briefViewSchema, createBriefRequestSchema, splitBriefNotes, assertBriefDeadline,
   saveBriefDraftRequestSchema, approveBriefRequestSchema, validateBriefApproval,
-  listBriefsQuerySchema, exportBriefQuerySchema, projectPublicOpportunity,
+  listBriefsQuerySchema, exportBriefQuerySchema, projectPublicOpportunity, validatePublicationApproval, canonicalPublicJson, BriefContractConflict,
   type BriefView, type BriefSummary,
 } from "../shared/briefs";
 import { normalizeAddress } from "../shared/validation";
@@ -25,6 +25,12 @@ export function saveBrief(db: Database, brief: BriefView): void {
 function deadline(value: string, now: number) { try { assertBriefDeadline(value, now); } catch { throw badInput("Deadline must be within the next seven days."); } }
 const conflict = () => new ServiceError("REVISION_CONFLICT", 409, "The saved revision changed. Reload the brief.");
 
+/** Persisted evidence is historical. Only an operation that observed the chain can return fresh. */
+export function storedBriefView(brief: BriefView): BriefView {
+  return brief.publication.freshness === "fresh"
+    ? { ...brief, publication: { ...brief.publication, freshness: "stale" } } : brief;
+}
+
 export class BriefService {
   constructor(private db: Database, private now = Date.now) {}
   create(owner: string, value: unknown) {
@@ -40,7 +46,7 @@ export class BriefService {
       .run(brief.id, owner.toLowerCase(), JSON.stringify(brief), brief.executionStatus, timestamp);
     return brief;
   }
-  get(owner: string, id: string) { return getBrief(this.db, owner, id); }
+  get(owner: string, id: string) { return storedBriefView(getBrief(this.db, owner, id)); }
   list(owner: string, input: unknown) {
     const query = listBriefsQuerySchema.parse(input);
     const cursor = query.beforeId ? getBrief(this.db, owner, query.beforeId) : null;
@@ -48,7 +54,7 @@ export class BriefService {
       ? this.db.prepare("SELECT view_json FROM briefs WHERE owner=? AND (created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 51").all(owner.toLowerCase(), cursor.createdAt, cursor.createdAt, cursor.id)
       : this.db.prepare("SELECT view_json FROM briefs WHERE owner=? ORDER BY created_at DESC,id DESC LIMIT 51").all(owner.toLowerCase())) as { view_json: string }[];
     const briefs: BriefSummary[] = rows.slice(0, 50).map(row => {
-      const b = briefViewSchema.parse(JSON.parse(row.view_json)); const parameters = b.editedDraft?.parameters ?? b.publicParameters;
+      const b = storedBriefView(briefViewSchema.parse(JSON.parse(row.view_json))); const parameters = b.editedDraft?.parameters ?? b.publicParameters;
       return { id: b.id, title: parameters.title, category: parameters.category, executionStatus: b.executionStatus,
         reviewStatus: b.review.status, publicationStatus: b.publication.status, freshness: b.publication.freshness,
         draftRevision: b.draftRevision, createdAt: b.createdAt, updatedAt: b.updatedAt };
@@ -81,10 +87,21 @@ export class BriefService {
       brief.review = { status: "approved", approval }; brief.updatedAt = approval.approvedAt; saveBrief(this.db, brief); return brief;
     });
   }
-  export(owner: string, id: string, input: unknown) {
-    const { format } = exportBriefQuerySchema.parse(input); const brief = getBrief(this.db, owner, id);
+  async export(owner: string, id: string, input: unknown) {
+    const { format, audience } = exportBriefQuerySchema.parse(input); const brief = getBrief(this.db, owner, id);
+    if (audience === "public") {
+      if (brief.review.status !== "approved") throw new BriefContractConflict("APPROVAL_REQUIRED");
+      const payload = await validatePublicationApproval(brief, brief.draftRevision, brief.review.approval.publicPayloadHash);
+      // Hashing yields: an edit or approval change during export must not release a stale public revision.
+      const current = getBrief(this.db, owner, id);
+      if (current.draftRevision !== brief.draftRevision || JSON.stringify(current.review) !== JSON.stringify(brief.review)
+        || JSON.stringify(current.editedDraft) !== JSON.stringify(brief.editedDraft)) throw conflict();
+      return { filename: `brief-public-r${payload.revision}.${format}`, mediaType: format === "json" ? "application/json" : "text/plain",
+        content: format === "json" ? canonicalPublicJson(payload)
+          : [`PUBLIC BRIEFMINT EXPORT — approved revision ${payload.revision}; advertised budget is unfunded`, canonicalPublicJson(payload)].join("\n\n") };
+    }
     return { filename: `brief-${brief.id}.${format}`, mediaType: format === "json" ? "application/json" : "text/plain",
-      content: format === "json" ? JSON.stringify(brief, null, 2) : ["PRIVATE BRIEFMINT EXPORT — contains source and evidence",
+      content: format === "json" ? JSON.stringify(storedBriefView(brief), null, 2) : ["PRIVATE BRIEFMINT EXPORT — contains source and evidence",
         "Private notes", brief.inputSegments.map(s => s.text).join("\n\n"), "Original model result", JSON.stringify(brief.immutableModelResult, null, 2),
         "Saved candidate", JSON.stringify(brief.editedDraft, null, 2), "Evidence", JSON.stringify(brief.evidence, null, 2)].join("\n\n") };
   }

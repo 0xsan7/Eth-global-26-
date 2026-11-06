@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { transaction, type Database } from "./db";
-import { getBrief, saveBrief } from "./briefs";
+import { getBrief, saveBrief, storedBriefView } from "./briefs";
 import { badInput, ServiceError } from "./errors";
 import {
   assertBriefDeadline, arkivTransactionSchema, briefViewSchema, canonicalPublicJson,
@@ -45,6 +45,16 @@ export class BriefPublicationService {
       saveBrief(this.db, brief);
     });
   }
+  private markStale(owner: string, id: string, expectedPublication: BriefView["publication"]) {
+    transaction(this.db, () => {
+      const brief = getBrief(this.db, owner, id);
+      if (JSON.stringify(brief.publication) !== JSON.stringify(expectedPublication)) return;
+      if (brief.publication.freshness === "fresh") {
+        brief.publication.freshness = "stale";
+        saveBrief(this.db, brief);
+      }
+    });
+  }
   private async observation(reader: PublicationReader, key: string) {
     const [raw, block] = await Promise.all([reader.get(key), reader.currentBlock()]);
     const record = raw === null ? null : opportunityRecordSchema.parse(raw);
@@ -60,6 +70,45 @@ export class BriefPublicationService {
       status: BigInt(block) >= BigInt(record.expiresAtBlock) ? "expired" as const : record.payload.status === "closed" ? "closed" as const : "live" as const,
       externalChange: false,
     };
+  }
+  /** Observe the known entity without changing a pending intent or private review. */
+  async refresh(owner: string, id: string): Promise<BriefView> {
+    const snapshot = getBrief(this.db, owner, id);
+    const confirmed = snapshot.publication.confirmed;
+    if (!confirmed) return snapshot;
+    let next: NonNullable<BriefView["publication"]["confirmed"]>;
+    try {
+      next = await this.network(async reader => {
+        const { record, block } = await this.observation(reader, confirmed.entityKey);
+        if (BigInt(block.number) < BigInt(confirmed.observedAtBlock)) throw new Error("Older block observation");
+        if (!record) {
+          if (BigInt(block.number) < BigInt(confirmed.expiresAtBlock)) throw new Error("Entity is unavailable before expiry");
+          return { ...confirmed, status: "expired" as const, observedAtBlock: block.number,
+            observedAt: new Date(Number(block.timestamp) * 1000).toISOString() };
+        }
+        if (record.entityKey !== confirmed.entityKey || !sameAddress(record.ownerAddress, owner)) throw conflict();
+        if (BigInt(record.observedAtBlock) < BigInt(confirmed.observedAtBlock)) throw new Error("Older entity observation");
+        const observed = await this.evidence(record, confirmed.lastConfirmedTransaction, block.number);
+        observed.externalChange = confirmed.externalChange || observed.observedPayloadHash !== confirmed.observedPayloadHash
+          || observed.expiresAtBlock !== confirmed.expiresAtBlock;
+        return observed;
+      });
+    } catch (error) {
+      if (error instanceof ServiceError && error.code === "PUBLICATION_CONFLICT") {
+        this.markStale(owner, id, snapshot.publication);
+      } else {
+        this.markUnavailable(owner, id, undefined, snapshot.publication);
+      }
+      throw error;
+    }
+    return transaction(this.db, () => {
+      const current = getBrief(this.db, owner, id);
+      if (JSON.stringify(current.publication) !== JSON.stringify(snapshot.publication)) throw conflict();
+      current.publication = { ...current.publication, status: current.publication.pending ? "pending" : next.status,
+        freshness: "fresh", confirmed: next };
+      saveBrief(this.db, briefViewSchema.parse(current));
+      return current;
+    });
   }
   private async preparedIntent(owner: string, id: string, request: z.infer<typeof preparePublicationRequestSchema>, requestJson: string) {
     const snapshot = getBrief(this.db, owner, id);
@@ -126,7 +175,10 @@ export class BriefPublicationService {
         const record = opportunityRecordSchema.parse(raw);
         if (BigInt(block.number) < BigInt(record.observedAtBlock)) throw unavailable();
         const hash = await hashPublicOpportunity(record.payload);
-        if (record.entityKey !== confirmed.entityKey || !sameAddress(record.ownerAddress, owner)) throw conflict();
+        if (record.entityKey !== confirmed.entityKey || !sameAddress(record.ownerAddress, owner)) {
+          this.markStale(owner, id, initial.publication);
+          throw conflict();
+        }
         if (hash !== confirmed.observedPayloadHash || record.expiresAtBlock !== confirmed.expiresAtBlock) {
           const evidence = await this.evidence(record, confirmed.lastConfirmedTransaction, block.number);
           evidence.externalChange = true;
@@ -183,7 +235,7 @@ export class BriefPublicationService {
     const brief = getBrief(this.db, owner, id);
     const row = this.row(intentId);
     if (!row || row.brief_id !== id) throw conflict();
-    return { brief, pending: row.status === "prepared" || row.status === "pending" };
+    return { brief: storedBriefView(brief), pending: row.status === "prepared" || row.status === "pending" };
   }
   async reconcile(owner: string, id: string, value: unknown): Promise<{ brief: BriefView; pending: boolean }> {
     const request = reconcilePublicationRequestSchema.parse(value);
@@ -195,7 +247,7 @@ export class BriefPublicationService {
     if (row.transaction_hash && request.transactionHash && row.transaction_hash !== request.transactionHash) throw conflict();
     if (row.entity_key && request.entityKey && row.entity_key !== request.entityKey) throw conflict();
     if (intent.entityKey && request.entityKey && intent.entityKey !== request.entityKey) throw conflict();
-    if (row.status === "confirmed" || row.status === "reverted") return { brief: getBrief(this.db, owner, id), pending: false };
+    if (row.status === "confirmed" || row.status === "reverted") return { brief: storedBriefView(getBrief(this.db, owner, id)), pending: false };
     const active = transaction(this.db, () => {
       const current = this.row(request.intentId);
       if (current && (current.status === "confirmed" || current.status === "reverted")) return false;
@@ -227,6 +279,7 @@ export class BriefPublicationService {
     if (receipt.status === "reverted") return this.currentResult(owner, id, request.intentId);
     const target = intent.entityKey ?? row.entity_key ?? (receipt.entityKeys.length === 1 ? receipt.entityKeys[0] : null);
     if (!target || !receipt.entityKeys.includes(target)) throw conflict();
+    const observationSnapshot = getBrief(this.db, owner, id).publication;
     let observation: Awaited<ReturnType<BriefPublicationService["observation"]>>;
     try { observation = await this.network(async reader => {
       const observed = await this.observation(reader, target);
@@ -241,21 +294,25 @@ export class BriefPublicationService {
     const afterObservation = this.currentResult(owner, id, request.intentId);
     if (!afterObservation.pending || !observation.record) return afterObservation;
     const record = observation.record;
-    if (record.entityKey !== target || !sameAddress(record.ownerAddress, owner)
-      || record.expiresAtBlock !== intent.expiresAtBlock || BigInt(record.observedAtBlock) < BigInt(receipt.blockNumber)
+    if (record.entityKey !== target || !sameAddress(record.ownerAddress, owner)) {
+      this.markStale(owner, id, observationSnapshot);
+      throw conflict();
+    }
+    if (record.expiresAtBlock !== intent.expiresAtBlock || BigInt(record.observedAtBlock) < BigInt(receipt.blockNumber)
       || canonicalPublicJson(record.payload) !== canonicalPublicJson(intent.payload)
       || await hashPublicOpportunity(record.payload) !== intent.publicPayloadHash) throw conflict();
     const evidence = await this.evidence(record, row.transaction_hash, observation.block.number);
-    return this.settle(owner, id, request.intentId, "confirmed", evidence);
+    return this.settle(owner, id, request.intentId, "confirmed", evidence, observationSnapshot);
   }
-  private settle(owner: string, id: string, intentId: string, status: "confirmed" | "reverted", evidence: BriefView["publication"]["confirmed"]) {
+  private settle(owner: string, id: string, intentId: string, status: "confirmed" | "reverted", evidence: BriefView["publication"]["confirmed"], expectedPublication: BriefView["publication"]) {
     return transaction(this.db, () => {
       const brief = getBrief(this.db, owner, id);
       const row = this.row(intentId);
       if (!row || !brief.publication.pending || brief.publication.pending.intent.intentId !== intentId) {
-        if (row?.status === status) return { brief, pending: false };
+        if (row?.status === status) return { brief: storedBriefView(brief), pending: false };
         throw conflict();
       }
+      if (JSON.stringify(brief.publication) !== JSON.stringify(expectedPublication)) throw conflict();
       const confirmed = evidence ?? brief.publication.confirmed;
       brief.publication = { status: confirmed?.status ?? "unpublished", freshness: evidence ? "fresh" : brief.publication.freshness, confirmed, pending: null };
       this.db.prepare("UPDATE brief_publications SET status = ? WHERE intent_id = ?").run(status, intentId);

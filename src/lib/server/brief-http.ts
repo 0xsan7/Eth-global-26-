@@ -1,12 +1,13 @@
 import "server-only";
 import { z } from "zod";
-import { briefApi, briefIdSchema, BriefContractConflict, type BriefApiName } from "../shared/briefs";
+import { briefApi, briefIdSchema, briefViewSchema, BriefContractConflict, type BriefApiName } from "../shared/briefs";
 import type { ApiResult } from "../shared/api";
 import { ValidationError } from "../shared/validation";
 import { badInput, ServiceError } from "./errors";
 import { readBoundedText } from "./bounded-body";
 import { getRuntime } from "./runtime";
 import { getBriefPublicConfig, type BriefRuntime } from "./brief-runtime";
+import { storedBriefView } from "./briefs";
 
 function json(data: unknown, status = 200) {
   return Response.json({ ok: true, data }, { status, headers: { "Cache-Control": "no-store" } });
@@ -51,13 +52,18 @@ export async function handleBrief(action: BriefApiName, request: Request, id?: s
       case "get": data = runtime.briefs.get(address, id!); break;
       case "saveDraft": data = runtime.briefs.saveDraft(address, id!, input); break;
       case "approve": data = await runtime.briefs.approve(address, id!, input); break;
-      case "export": data = runtime.briefs.export(address, id!, input); break;
+      case "export": data = await runtime.briefs.export(address, id!, input); break;
       case "run": { const result = await runtime.runner.run(address, id!); data = result.brief; status = result.running ? 202 : 200; break; }
       case "prepare": data = await runtime.publication.prepare(address, id!, input); break;
       case "reconcile": { const result = await runtime.publication.reconcile(address, id!, input); data = result.brief; status = result.pending ? 202 : 200; break; }
+      case "refresh": data = await runtime.publication.refresh(address, id!); break;
     }
     // Server output failures are internal errors, never a user validation error.
-    try { endpoint.response.parse({ ok: true, data }); } catch { throw new ServiceError("INTERNAL_ERROR", 500, "Request could not be completed."); }
+    try {
+      // Read/edit operations cannot renew a saved chain observation. Explicit observation operations own fresh evidence.
+      if (["create", "get", "run", "saveDraft", "approve"].includes(action)) data = storedBriefView(briefViewSchema.parse(data));
+      endpoint.response.parse({ ok: true, data });
+    } catch { throw new ServiceError("INTERNAL_ERROR", 500, "Request could not be completed."); }
     return json(data, status);
   } catch (error) {
     const failure = error instanceof ServiceError ? error

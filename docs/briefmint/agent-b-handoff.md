@@ -17,7 +17,12 @@ Every endpoint returns the shared `{ok:true,data}` or `{ok:false,error:{code,mes
 | `approve` | `POST /api/briefs/:id/approve` | `{expectedRevision, publicPayloadHash}` | `BriefView` |
 | `prepare` | `POST /api/briefs/:id/publication/prepare` | `{intentId, expectedRevision, publicPayloadHash, operation}` | `PublicationIntent` |
 | `reconcile` | `POST /api/briefs/:id/publication/reconcile` | `{intentId, transactionHash, entityKey}` | `BriefView` (200 settled / 202 unresolved) |
-| `export` | `GET /api/briefs/:id/export?format=txt\|json` | Required format | `{filename, mediaType, content}` |
+| `refresh` | `POST /api/briefs/:id/publication/refresh` | `{}` | `BriefView`; read-only chain observation, never publishes or compiles |
+| `export` | `GET /api/briefs/:id/export?format=txt\|json[&audience=private\|public]` | Required format; audience defaults to `private` | `{filename, mediaType, content}` |
+
+For `audience=public`, the server requires approval for the current brief revision and exports only its approved public payload. A historical deadline is allowed for export. Filenames are `brief-public-r<revision>.json` or `brief-public-r<revision>.txt`; neither filename nor content includes a private brief ID. Content excludes source text, source references and private evidence. Public export does not publish or refresh chain state. Private exports retain the existing owner check and include private recovery content.
+
+`refresh` only observes the chain through the configured reader. It does not sign, submit, compile, or change approval. If the reader is unavailable or the observation fails, freshness remains unavailable/stale as appropriate and the last confirmed publication is preserved; an unavailable read is never treated as absence or expiry. Saved reads, edits, exports and repeated settled reconciliation report historical observations as `stale`; only a new successful chain observation returns `fresh`. Pending intent state survives refresh. A newly observed external change blocks overwrite and is not attributed to the last application-confirmed transaction.
 
 Types are owned by `src/lib/shared/briefs.ts`; use `BriefApiRequest<K>` / `BriefApiResponse<K>` rather than redefining DTOs. Never send owner, model, quota, paid-state, or evidence claims from the caller. Publication writes are wallet-signed in the browser; `prepare` is not a write.
 
@@ -45,11 +50,12 @@ For safe error handling, an illustrative response is `{"ok":false,"error":{"code
 - **Implemented in the shared foundation:** strict schemas and inferred API request/response types, canonical public projection/hash and semantic validation helpers, the integration contract, and contract tests. These tests establish local contract behavior only.
 - **Implemented and locally tested:** auth purpose routing, additive persistence/migrations, owner-bound services, all API routes, finite quota/lease/retry runner, private compiler, revision-bound approval, immutable intents and injected server reconciliation. Original provider response bytes are retained privately in attempt storage. Production intentionally supplies no Arkiv reader until B delivers the real adapter.
 - **Still a live proof gate:** successful authorized private inference with verified router and independent response evidence; Arkiv schema/index/expiry behavior and read/write flow on Rabdi; full browser login-to-publication flow and restart recovery. A local double or provider readiness response is not proof of any live gate.
-- **No claim of deployment or live provider call is made by this handoff.** The smoke script is deliberately operator-only and has not been run.
+- One operator-authorized 0G smoke attempt returned HTTP 502 / `PROVIDER_UNAVAILABLE` after 1,827 ms. Billing was uncertain (`mayHaveBeenBilled=true`), not confirmed. There has been no successful inference and no second attempt. Follow [the 0G preflight record](0g-preflight.md); do not rerun without separate explicit authorization.
+- No deployment or live Arkiv lifecycle is claimed. The unauthenticated public catalog preflight passed, but it is not inference evidence.
 
 ## Exact Agent B integration steps
 
-A owns root/shared/server/API/migrations; B owns `apps/web/**`, `src/lib/arkiv/briefmint/{schema,read,write}.ts`, neutral adapter tests, independent reader and Arkiv evidence. No overlapping edits. Keep Vite: browser `http://127.0.0.1:5173`, Next `npm run dev -- --hostname 127.0.0.1 --port 4100`, APP_ORIGIN/AUTH_ALLOWED_ORIGINS set privately to the browser origin. Proxy `/api` unchanged; use relative fetch with `credentials: 'same-origin'`. Do not mix localhost/127.0.0.1. Production is one HTTPS origin routing `/api/*` to persistent Node 24 Next and other paths to built Vite assets. See the integration contract for cookies and proxy rules.
+A owns root/shared/server/API/migrations; B owns `apps/web/**`, `src/lib/arkiv/briefmint/{schema,read,write}.ts`, neutral adapter tests, independent reader and Arkiv evidence. No overlapping edits. The local backend setup and integration evidence checklist are in [local-integration.md](local-integration.md). The current backend checkout does not contain `apps/web`; the teammate owns starting Vite on `http://127.0.0.1:5173` and its `/api` proxy. Next listens on `127.0.0.1:4100`; set both `APP_ORIGIN` and `AUTH_ALLOWED_ORIGINS` to the browser origin. Proxy `/api` unchanged and use relative fetch with `credentials: 'same-origin'`. Do not mix localhost and 127.0.0.1. Production is one HTTPS origin routing `/api/*` to persistent Node 24 Next and other paths to built Vite assets. See the integration contract for production proxy/cookie requirements; no deployment is performed here.
 
 1. GET `/api/auth/challenge?address=...&purpose=briefmint`, sign its exact message, POST verify `{challengeId,signature}`. Chain is 7794095. Clear private caches/logout on account change. Login authorizes no payment or Arkiv write.
 2. Create private intake; explicitly run compilation. First successful compilation increments revision 1 to 2. Poll only persisted active states; reopening never calls run. Show model suggestions and source references privately; missing information lives in `openQuestions`.
@@ -73,12 +79,14 @@ Server injection additionally requires `currentBlock(): Promise<{number:string,t
 - External owner changes block automatic overwrite; explicit resolution is not implemented. Deadline/expiry extension is also not implemented.
 - Real 0G credit eligibility, model quality/latency, signature verification, Arkiv schema/index/size/expiry, owner selection, connected Vite cookies/account switching, hosting and evidence remain live gates. Do not access Apple Notes or put keys in chat, browser bundles or public records.
 
-## Operator-only provider smoke
+## 0G operator status
 
-After the backend provider module exists and the app runtime environment is configured locally (including `ZERO_G_API_KEY` and the required `SESSION_SECRET`), the operator may run the script explicitly. Never paste or print these values:
+Use [0g-preflight.md](0g-preflight.md) as the single source for current 0G setup and commands. Its public-only `--preflight` command does not read credentials. Its live command requires a separately authorized potentially billable inference and has already been run once, with an uncertain-billing 502 failure. The old smoke instructions that required `SESSION_SECRET` are obsolete; the isolated current smoke does not require it. No successful completion or independent response verification is established.
 
-```sh
-NODE_OPTIONS=--conditions=react-server npx tsx scripts/briefmint-live-smoke.ts --authorize-paid-inference
-```
+Do not run a second inference without separate explicit authorization. Do not use real private notes for smoke input.
 
-The script refuses to run without the exact authorization flag and configured runtime key, submits only its fixed harmless synthetic example, and prints only sanitized status plus request ID, model ID, and verification status. It does not print credentials or raw input/output. Do not run it during routine build/test checks; it may incur a paid provider call. Provider operation is opt-in and separate from publication.
+## Owner-facing privacy and retention copy
+
+Before an owner enters notes, the interface should state: “Your source notes and private draft are stored in BriefMint’s backend so you can compile, edit, and recover them. The backend processes your notes through the configured private inference route. Private routing does not hide notes from the application backend. Storage uses access-controlled SQLite; this demo does not promise application-level encryption or deletion from host backups. Only fields you review and approve are eligible for public export or publication. Public copies may persist after a record is closed or expires.”
+
+Do not promise a retention duration, backup erasure, zero-knowledge storage, or confidentiality from the operator unless an implemented policy and evidence support it. Public export must follow the current-revision approval rule described above.

@@ -1,5 +1,15 @@
 # Backend handoff
 
+## Local BriefMint completion follow-up — 6 November 2026
+
+Continued from `66a0931` while deferring further paid inference and live chain actions. Shared contract v1.1 adds `POST /api/briefs/:id/publication/refresh` and optional `audience=public` on export. Public downloads require current approval, validate the exact public hash/snapshot, recheck revision after asynchronous hashing, and omit private IDs even from filenames. Private export remains the default.
+
+Refresh observes only the known entity/current block through the injected reader, records external changes or proved expiry, preserves pending intent/private edits/approval, and preserves confirmed evidence on errors. Stored observations are stale on ordinary reads rather than indefinitely fresh. Both directions of refresh/reconcile races are guarded; an owner mismatch cannot leave evidence labelled fresh. The actual chain reader remains unavailable until the teammate supplies its adapter.
+
+Actual checks: **99 server tests passed**, lint/typecheck/production build passed, whitespace checks passed. Extended local standalone HTTP smoke passed with a real process restart, same temporary SQLite/session, zero inference dispatches, new-route authentication and rejection of unapproved public export. Initial smoke failed on sandbox loopback `EPERM`; the same command passed with approved local server access. Existing Vite checkout-example `use client` warning is unchanged and nonfatal. Solidity was not modified or rerun; its earlier five-test result remains historical.
+
+Full-PRD completion is approximately **57%** (backend 38/40, existing frontend 10/25, live sponsor proof 0/20, validation/docs/deployment 9/15). See [current checkpoint](briefmint/backend-checkpoint.md), [integration contract](briefmint/integration-contract.md), [teammate handoff](briefmint/agent-b-handoff.md) and [local setup/privacy runbook](briefmint/local-integration.md). `apps/web` is absent from this checkout; teammate files, credentials and external state were not changed. The next implementation dependency is the teammate's city/Arkiv adapter, followed by coordinated local origin/cookie checks and separately authorized live validation. No push, merge or deployment.
+
 ## 0G first-request preflight — 6 November 2026
 
 Focused follow-up from `a99a0d2`: hardened the guarded smoke and added [the exact operator setup/runbook](briefmint/0g-preflight.md). A public-only CLI run passed with TeeML `0gm-1.0-35b-a3b`, one catalog provider and zero inference requests. Private routing/fallback policy retained; single POST, redirects rejected, explicit authorization, fresh catalog checks, smoke-only non-thinking JSON/1200-token request and safe latency/provider/billing reporting are tested. Normal backend generation defaults stay unchanged.

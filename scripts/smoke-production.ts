@@ -10,24 +10,38 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const directory = await mkdtemp(join(tmpdir(), "tool-city-smoke-"));
 const base = "http://127.0.0.1:3187";
 const origin = "https://tool-city-smoke.invalid";
-const child = spawn(process.execPath, [".next/standalone/server.js"], {
-  cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: "3187", APP_ORIGIN: origin,
+const smokeEnv = { ...process.env, HOSTNAME: "127.0.0.1", PORT: "3187", APP_ORIGIN: origin,
     AUTH_ALLOWED_ORIGINS: origin, SESSION_SECRET: randomBytes(32).toString("hex"),
     DATABASE_PATH: join(directory, "smoke.sqlite"), NEXT_PUBLIC_ENABLE_DEV_FIXTURES: "false",
-    ZERO_G_API_KEY: "", ZERO_G_MODEL_ID: "", BRIEFMINT_ALLOWED_WALLETS: "" },
-});
+    ZERO_G_API_KEY: "", ZERO_G_MODEL_ID: "", BRIEFMINT_ALLOWED_WALLETS: "" };
 let logs = "";
-child.stdout.on("data", chunk => { logs += String(chunk); });
-child.stderr.on("data", chunk => { logs += String(chunk); });
-try {
+function startServer() {
+  const serverProcess = spawn(process.execPath, [".next/standalone/server.js"], {
+    cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: smokeEnv,
+  });
+  serverProcess.stdout.on("data", chunk => { logs += String(chunk); });
+  serverProcess.stderr.on("data", chunk => { logs += String(chunk); });
+  return serverProcess;
+}
+let child = startServer();
+async function stopServer() {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const stopped = new Promise<void>(resolve => { child.once("exit", () => resolve()); });
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => { child.kill("SIGKILL"); }, 2000);
+  try { await stopped; } finally { clearTimeout(timer); }
+}
+async function waitForServer() {
   let started = false;
   for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) throw new Error("Local production process exited before readiness.");
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error("Local production process exited before readiness.");
     try { if ((await fetch(base)).ok) { started = true; break; } } catch { /* Wait for local readiness. */ }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert(started, "Production server failed to start");
+}
+try {
+  await waitForServer();
   const config = await (await fetch(`${base}/api/config`)).json();
   assert.equal(config.data.configured, false, "Smoke must use the unconfigured deployment manifest");
   assert.equal((await fetch(`${base}/checkout-demo/index.html`)).status, 200);
@@ -69,16 +83,26 @@ try {
   assert.equal(after.data.attemptsUsed, 0);
   const exported = await fetch(`${base}/api/briefs/${brief.id}/export?format=json`, { headers });
   assert.equal(exported.status, 200); assert.equal(JSON.parse((await exported.json()).data.content).id, brief.id);
-  console.log("PASS: standalone assets, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private create/list/get/export, zero-attempt unavailable compilation. No external integration called.");
+  const publicExport = await fetch(`${base}/api/briefs/${brief.id}/export?format=json&audience=public`, { headers });
+  assert.equal(publicExport.status, 409, "Unapproved data must not be exported as public");
+  assert.equal((await publicExport.json()).error.code, "APPROVAL_REQUIRED");
+  const refreshed = await fetch(`${base}/api/briefs/${brief.id}/publication/refresh`, { method: "POST", headers, body: "{}" });
+  assert.equal(refreshed.status, 200, "A never-published brief needs no external observation");
+  assert.equal((await refreshed.json()).data.publication.status, "unpublished");
+  assert.equal((await fetch(`${base}/api/briefs/${brief.id}/publication/refresh`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: "{}" })).status, 401);
+  // Restart the actual standalone process with the same private database and session secret.
+  await stopServer(); child = startServer(); await waitForServer();
+  const reopened = await fetch(`${base}/api/briefs/${brief.id}`, { headers });
+  assert.equal(reopened.status, 200, "Owner session and private record must survive a process restart");
+  const persisted = (await reopened.json()).data;
+  assert.deepEqual(persisted.inputSegments, brief.inputSegments);
+  assert.equal(persisted.attemptsUsed, 0, "Restart/reopen must not dispatch inference");
+  assert.equal((await (await fetch(`${base}/api/briefs`, { headers })).json()).data.briefs.length, 1);
+  console.log("PASS: standalone assets, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private CRUD/export, approval-gated public export, authenticated publication refresh, persistent restart/session, zero inference dispatches. No external integration called.");
 } catch (error) {
   console.error(logs);
   throw error;
 } finally {
-  child.kill("SIGTERM");
-  await new Promise<void>(resolve => {
-    if (child.exitCode !== null) return resolve();
-    const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 2000);
-    child.once("exit", () => { clearTimeout(timer); resolve(); });
-  });
+  await stopServer();
   await rm(directory, { recursive: true, force: true });
 }

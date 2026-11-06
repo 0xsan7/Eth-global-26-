@@ -38,8 +38,100 @@ beforeEach(async () => {
 afterEach(() => db.close());
 const request = () => ({ intentId, expectedRevision: 1, publicPayloadHash: hash, operation: "create" as const });
 const reconcile = (transactionHash: string | null = null, entityKey: string | null = null) => ({ intentId, transactionHash, entityKey });
+async function confirmCreate() {
+  const intent = await service.prepare(owner, id, request());
+  receipt = { status: "confirmed", chainId: 7794095, signer: owner, entityKeys: [key], blockNumber: "101" };
+  record = { entityKey: key, ownerAddress: owner, payload: intent.payload, expiresAtBlock: intent.expiresAtBlock, observedAtBlock: "101", observedAt: time };
+  await service.reconcile(owner, id, reconcile(tx, key));
+  return intent;
+}
 
 describe("publication intent and independent reconciliation", () => {
+  it("refreshes only known entities and proves later expiry from the current block", async () => {
+    reader.get = async () => { throw new Error("must not read"); };
+    expect((await service.refresh(owner, id)).publication.status).toBe("unpublished");
+    reader.get = async () => record;
+    const intent = await confirmCreate();
+    record = null;
+    await expect(service.refresh(owner, id)).rejects.toMatchObject({ code: "ARKIV_UNAVAILABLE" });
+    expect(getBrief(db, owner, id).publication).toMatchObject({ status: "live", freshness: "unavailable", confirmed: { lastConfirmedTransaction: tx } });
+    reader.currentBlock = async () => ({ number: intent.expiresAtBlock, timestamp: String(Date.parse(time) / 1000 + 86400), blockTimeSeconds: 12 });
+    expect((await service.refresh(owner, id)).publication).toMatchObject({ status: "expired", freshness: "fresh", confirmed: { status: "expired", lastConfirmedTransaction: tx } });
+  });
+  it("records external changes without claiming a new app transaction, and rejects owner transfer", async () => {
+    await confirmCreate();
+    record = { ...record!, payload: { ...record!.payload, title: "External" }, expiresAtBlock: "7302" };
+    const observed = await service.refresh(owner, id);
+    expect(observed.publication).toMatchObject({ status: "live", freshness: "fresh", confirmed: { externalChange: true, lastConfirmedTransaction: tx, expiresAtBlock: "7302" } });
+    expect(observed.editedDraft).toEqual(brief.editedDraft);
+    expect(observed.review).toEqual(brief.review);
+    record = { ...record, ownerAddress: other };
+    await expect(service.refresh(owner, id)).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+    expect(getBrief(db, owner, id).publication).toEqual({ ...observed.publication, freshness: "stale" });
+  });
+  it("preserves pending intent and confirmed evidence when refresh fails", async () => {
+    await confirmCreate();
+    const briefs = new BriefService(db, () => Date.parse(time));
+    const revised = structuredClone(candidate); revised.parameters.title = "Updated";
+    briefs.saveDraft(owner, id, { expectedRevision: 1, draft: revised });
+    const revisedHash = await hashPublicOpportunity(projectPublicOpportunity(revised, 2));
+    await briefs.approve(owner, id, { expectedRevision: 2, publicPayloadHash: revisedHash });
+    const updateId = `0x${"e".repeat(64)}`;
+    await service.prepare(owner, id, { intentId: updateId, operation: "update", expectedRevision: 2, publicPayloadHash: revisedHash });
+    const before = getBrief(db, owner, id).publication;
+    expect((await service.refresh(owner, id)).publication).toMatchObject({ status: "pending", pending: before.pending, confirmed: { lastConfirmedTransaction: tx } });
+    reader.get = async () => { throw new Error("secret RPC detail"); };
+    await expect(service.refresh(owner, id)).rejects.toMatchObject({ code: "ARKIV_UNAVAILABLE", message: "Arkiv is unavailable." });
+    expect(getBrief(db, owner, id).publication).toMatchObject({ status: "pending", freshness: "unavailable", pending: before.pending, confirmed: before.confirmed });
+  });
+  it("does not overwrite a concurrent reconciliation with an older refresh", async () => {
+    await confirmCreate();
+    const briefs = new BriefService(db, () => Date.parse(time));
+    const revised = structuredClone(candidate); revised.parameters.title = "Updated";
+    briefs.saveDraft(owner, id, { expectedRevision: 1, draft: revised });
+    const revisedHash = await hashPublicOpportunity(projectPublicOpportunity(revised, 2));
+    await briefs.approve(owner, id, { expectedRevision: 2, publicPayloadHash: revisedHash });
+    const updateId = `0x${"e".repeat(64)}`, updateTx = `0x${"f".repeat(64)}`;
+    const update = await service.prepare(owner, id, { intentId: updateId, operation: "update", expectedRevision: 2, publicPayloadHash: revisedHash });
+    const oldRecord = record;
+    let release!: () => void; let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    let calls = 0;
+    reader.get = async () => { if (++calls === 1) { started(); await gate; return oldRecord; } return record; };
+    const slow = service.refresh(owner, id);
+    await entered;
+    record = { ...record!, payload: update.payload };
+    await service.reconcile(owner, id, { intentId: updateId, transactionHash: updateTx, entityKey: key });
+    release();
+    await expect(slow).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+    expect(getBrief(db, owner, id).publication).toMatchObject({ status: "live", confirmed: { observedPayloadHash: revisedHash, lastConfirmedTransaction: updateTx } });
+  });
+  it("does not let a delayed reconciliation erase a newer external observation", async () => {
+    await confirmCreate();
+    const briefs = new BriefService(db, () => Date.parse(time));
+    const revised = structuredClone(candidate); revised.parameters.title = "Updated";
+    briefs.saveDraft(owner, id, { expectedRevision: 1, draft: revised });
+    const revisedHash = await hashPublicOpportunity(projectPublicOpportunity(revised, 2));
+    await briefs.approve(owner, id, { expectedRevision: 2, publicPayloadHash: revisedHash });
+    const updateId = `0x${"e".repeat(64)}`, updateTx = `0x${"f".repeat(64)}`;
+    const update = await service.prepare(owner, id, { intentId: updateId, operation: "update", expectedRevision: 2, publicPayloadHash: revisedHash });
+    const matching = { ...record!, payload: update.payload };
+    let release!: () => void; let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    let calls = 0;
+    reader.get = async () => { if (++calls === 1) { started(); await gate; return matching; } return record; };
+    const slow = service.reconcile(owner, id, { intentId: updateId, transactionHash: updateTx, entityKey: key });
+    await entered;
+    record = { ...matching, payload: { ...matching.payload, title: "External" }, observedAtBlock: "102" };
+    reader.currentBlock = async () => ({ number: "102", timestamp: String(Date.parse(time) / 1000 + 12), blockTimeSeconds: 12 });
+    const refreshed = await service.refresh(owner, id);
+    expect(refreshed.publication).toMatchObject({ status: "pending", confirmed: { externalChange: true, observedAtBlock: "102" } });
+    release();
+    await expect(slow).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+    expect(getBrief(db, owner, id).publication).toEqual(refreshed.publication);
+  });
   it("persists immutable intent, returns duplicate, and blocks a second create even with unknown broadcast", async () => {
     const intent = await service.prepare(owner, id, request());
     expect(intent.expiresAtBlock).toBe("7301");
@@ -210,7 +302,7 @@ describe("publication intent and independent reconciliation", () => {
     await entered;
     expect((await service.reconcile(owner, id, reconcile(tx, key))).pending).toBe(false);
     release();
-    expect(await slow).toMatchObject({ pending: false, brief: { publication: { status: "live", freshness: "fresh" } } });
+    expect(await slow).toMatchObject({ pending: false, brief: { publication: { status: "live", freshness: "stale" } } });
   });
   it("keeps unbound reverted receipts pending and fails closed when reader is unavailable", async () => {
     await expect(new BriefPublicationService(db).prepare(owner, id, request())).rejects.toMatchObject({ code: "ARKIV_UNAVAILABLE" });

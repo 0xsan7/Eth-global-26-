@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { openDatabase, type Database } from "../../src/lib/server/db";
 import { createBriefRuntime, type BriefRuntime } from "../../src/lib/server/brief-runtime";
 import { handleBrief } from "../../src/lib/server/brief-http";
-import { briefApi, hashPublicOpportunity, projectPublicOpportunity, type BriefApiName, type ModelResult } from "../../src/lib/shared/briefs";
+import { BriefService } from "../../src/lib/server/briefs";
+import { briefApi, canonicalPublicJson, hashPublicOpportunity, projectPublicOpportunity, type BriefApiName, type ModelResult, type OpportunityRecord } from "../../src/lib/shared/briefs";
 import type { ServerEnv } from "../../src/lib/server/env";
 import type { PublicationReader } from "../../src/lib/server/brief-publication";
 import { developmentJob } from "../../src/lib/shared/fixtures";
@@ -140,6 +141,75 @@ describe("BriefMint API and private lifecycle", () => {
     runtime.briefs.saveDraft(account.address, brief.id, { expectedRevision: 2, draft: ready.editedDraft });
     await expect(approval).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
     expect(runtime.briefs.get(account.address, brief.id).review.status).toBe("unreviewed");
+  });
+  it("exports only the current approved public projection and preserves default private downloads", async () => {
+    const runtime = setup(); const cookie = await login(runtime); const otherCookie = await login(runtime, other);
+    const brief = runtime.briefs.create(account.address, { notes: "PRIVATE SOURCE — one graphic", publicParameters: parameters });
+    const ready = (await runtime.runner.run(account.address, brief.id)).brief;
+    const payload = projectPublicOpportunity(ready.editedDraft!, ready.draftRevision);
+    const query = "?format=json&audience=public";
+    expect((await call(runtime, "export", cookie, undefined, brief.id, query)).status).toBe(409);
+    await runtime.briefs.approve(account.address, brief.id, { expectedRevision: ready.draftRevision, publicPayloadHash: await hashPublicOpportunity(payload) });
+    const response = await call(runtime, "export", cookie, undefined, brief.id, query);
+    expect(response.status).toBe(200); const exported = (await response.json()).data;
+    expect(exported.filename).toBe(`brief-public-r${ready.draftRevision}.json`);
+    expect(exported.filename).not.toContain(brief.id);
+    expect(exported.content).toBe(canonicalPublicJson(payload));
+    expect(exported.content).not.toMatch(/PRIVATE SOURCE|seg_001|local-double|inputSegments|evidence|ownerAddress/);
+    expect(exported.content).not.toContain(brief.id);
+    const txt = (await (await call(runtime, "export", cookie, undefined, brief.id, "?format=txt&audience=public")).json()).data;
+    expect(txt.content).toContain("PUBLIC BRIEFMINT EXPORT"); expect(txt.content).not.toContain("PRIVATE SOURCE");
+    const privateExport = (await (await call(runtime, "export", cookie, undefined, brief.id, "?format=json")).json()).data;
+    expect(privateExport.content).toContain("PRIVATE SOURCE"); expect(privateExport.filename).toBe(`brief-${brief.id}.json`);
+    expect((await call(runtime, "export", otherCookie, undefined, brief.id, query)).status).toBe(404);
+    expect((await call(runtime, "export", undefined, undefined, brief.id, query)).status).toBe(401);
+    expect((await call(runtime, "export", cookie, undefined, brief.id, "?format=json&audience=all")).status).toBe(400);
+    // A saved approved record remains exportable after its business deadline, without re-approval or inference.
+    expect((await new BriefService(runtime.db, () => now + 2 * 86400000).export(account.address, brief.id, { format: "json", audience: "public" })).content).toBe(exported.content);
+    runtime.briefs.saveDraft(account.address, brief.id, { expectedRevision: ready.draftRevision, draft: ready.editedDraft });
+    expect((await call(runtime, "export", cookie, undefined, brief.id, query)).status).toBe(409);
+  });
+  it("rejects public export racing a new saved revision", async () => {
+    const runtime = setup(); const brief = runtime.briefs.create(account.address, { notes: "one graphic", publicParameters: parameters });
+    const ready = (await runtime.runner.run(account.address, brief.id)).brief;
+    const hash = await hashPublicOpportunity(projectPublicOpportunity(ready.editedDraft!, ready.draftRevision));
+    await runtime.briefs.approve(account.address, brief.id, { expectedRevision: ready.draftRevision, publicPayloadHash: hash });
+    const exported = runtime.briefs.export(account.address, brief.id, { format: "json", audience: "public" });
+    runtime.briefs.saveDraft(account.address, brief.id, { expectedRevision: ready.draftRevision, draft: ready.editedDraft });
+    await expect(exported).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
+  });
+  it("refreshes publication through authenticated read-only observation and keeps stored reads stale", async () => {
+    const key = `0x${"ab".repeat(32)}`, tx = `0x${"cd".repeat(32)}`;
+    let record: OpportunityRecord | null = null;
+    const reader: PublicationReader = {
+      async currentBlock() { return { number: "101", timestamp: String(now / 1000), blockTimeSeconds: 12 }; },
+      async get() { return record; }, async list() { return { records: [], nextCursor: null }; },
+      async transaction() { return { status: "confirmed", chainId: 7794095, signer: account.address, entityKeys: [key], blockNumber: "101" }; },
+    };
+    const runtime = setup(reader); const cookie = await login(runtime); const otherCookie = await login(runtime, other);
+    const brief = runtime.briefs.create(account.address, { notes: "PRIVATE SOURCE — one graphic", publicParameters: parameters });
+    expect((await call(runtime, "refresh", cookie, {}, brief.id)).status).toBe(200);
+    expect((await call(runtime, "refresh", undefined, {}, brief.id)).status).toBe(401);
+    expect((await call(runtime, "refresh", otherCookie, {}, brief.id)).status).toBe(404);
+    expect((await call(runtime, "refresh", cookie, { ownerAddress: account.address }, brief.id)).status).toBe(400);
+    const ready = (await runtime.runner.run(account.address, brief.id)).brief;
+    const hash = await hashPublicOpportunity(projectPublicOpportunity(ready.editedDraft!, ready.draftRevision));
+    await runtime.briefs.approve(account.address, brief.id, { expectedRevision: ready.draftRevision, publicPayloadHash: hash });
+    const intent = await runtime.publication.prepare(account.address, brief.id, { intentId: `0x${"ef".repeat(32)}`, expectedRevision: ready.draftRevision, publicPayloadHash: hash, operation: "create" });
+    record = { entityKey: key, ownerAddress: account.address, payload: intent.payload, expiresAtBlock: intent.expiresAtBlock, observedAtBlock: "101", observedAt: new Date(now).toISOString() };
+    const request = { intentId: intent.intentId, transactionHash: tx, entityKey: key };
+    expect((await runtime.publication.reconcile(account.address, brief.id, request)).brief.publication.freshness).toBe("fresh");
+    const saved = (await (await call(runtime, "get", cookie, undefined, brief.id)).json()).data;
+    expect(saved.publication.freshness).toBe("stale");
+    expect((await (await call(runtime, "list", cookie)).json()).data.briefs[0].freshness).toBe("stale");
+    const repeated = (await (await call(runtime, "reconcile", cookie, request, brief.id)).json()).data;
+    expect(repeated.publication.freshness).toBe("stale");
+    record = { ...record, payload: { ...record.payload, status: "closed" } };
+    const refreshed = await call(runtime, "refresh", cookie, {}, brief.id);
+    expect(refreshed.status).toBe(200);
+    expect((await refreshed.json()).data).toMatchObject({ draftRevision: ready.draftRevision, review: { status: "approved" },
+      publication: { status: "closed", freshness: "fresh", confirmed: { externalChange: true, lastConfirmedTransaction: tx } } });
+    expect(runtime.briefs.get(account.address, brief.id).editedDraft!.status).toBe("open");
   });
   it("prepares only approved public fields and exposes honest unavailable reconciliation", async () => {
     const reader: PublicationReader = { async currentBlock() { return { number: "100", timestamp: String(now / 1000), blockTimeSeconds: 12 }; },
