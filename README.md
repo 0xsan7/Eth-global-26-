@@ -48,28 +48,3 @@ npm run build
 npm run smoke:local
 ```
 
-Run the development server after configuring the local environment. `npm run smoke:local` requires the root production build first; it uses loopback servers, a disposable database and test signer, and disables external provider/Arkiv configuration. Legacy contract tests are available with `npm run test:contracts` and run against a simulated chain.
-
-The read-only Arkiv client is independent of the application API, SQLite, login and wallet:
-
-```sh
-node --import tsx scripts/briefmint-arkiv-reader.ts --help
-```
-
-Its query options and the separately authorized live procedure are documented in the [Arkiv probe](docs/briefmint/ARKIV_LIVE_PROBE.md). No real record has yet been independently discovered by this project.
-
-## Architecture and handoff
-
-- **Browser:** React/Next city (isometric SVG); the browser wallet owns and signs public Arkiv writes.
-- **Backend:** Node/Next API, session-derived ownership, revisioned briefs, quota/lease execution, approval and independent publication reconciliation.
-- **Private computation:** 0G private-only routing with fallbacks disabled; Router-reported verification and independent verification are distinct.
-- **Public data:** Arkiv indexed opportunity entities with owner and expiry from network system fields. The canonical public DTO is in `src/lib/shared/briefs.ts`.
-- **Storage:** private SQLite on a persistent volume, with one Node process. Production HTTPS, proxy routing, backups and restart recovery still require actual hosting evidence.
-
-The [Agent B frontend handoff](docs/briefmint/AGENT_B_FRONTEND_HANDOFF.md) defines the current API and outstanding browser tasks. The [integration contract](docs/briefmint/integration-contract.md) documents the shared boundaries.
-
-## Live validation and submission
-
-Live inference can consume credits, and wallet writes can incur network costs. They require separate human authorization. Follow the [0G live probe](docs/briefmint/0G_LIVE_PROBE.md), [Arkiv live probe](docs/briefmint/ARKIV_LIVE_PROBE.md), and [live validation and submission checklist](docs/briefmint/LIVE_VALIDATION_AND_SUBMISSION.md). [Demo notes](docs/briefmint/DEMO_NOTES.md) provide synthetic input and evidence-safe claims.
-
-The Tool City reference UI came from the recorded `cb0db61` source snapshot and was adapted for BriefMint. AI assistance was used in planning, implementation and testing. A complete third-party asset and dependency license review remains outstanding; do not claim all assets are original until that review is complete.
