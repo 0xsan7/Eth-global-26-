@@ -83,3 +83,26 @@ What Agent A must merge or do next:
 3. Configure 0G private inference and run a real paid translation end to end.
 4. Replace every FIXTURE slot in `docs/demo-script.md` with live evidence and
    have both teammates sign the both-parties review note before submission.
+
+## BriefMint city polish (2D animation pass)
+
+- Labels: Creator's Home → **Planning Desk**; Treasury id keeps the **Release Desk** label
+  with a neutral document-and-check emblem (the gold finial was removed); AI Studio,
+  Registry Hall and Archive are unchanged. Building ids and positions are unchanged.
+- `src/components/city/city-state.ts` is a pure, serializable mapping
+  (`deriveCityState`, `cityInputFromBrief`) for execution × review × publication ×
+  freshness → worker location/pose/carry, per-building visuals and the status line.
+  `briefStateToScene` now delegates to it and adds `scene.city`. "Live" requires
+  entity key + expiry block + observation; stale/unavailable reads never render as
+  closed/expired. Tests live in `tests/ui/briefmint.test.ts` (all 1,440 input combinations).
+- `walk-path.ts` (pure) routes the worker along the two street centrelines only.
+  `Worker.tsx` animates via requestAnimationFrame writing the SVG transform attribute;
+  it never sets React or brief state. It jumps (no travel) on first render, on a
+  different brief id, and under reduced motion.
+- `city.css` animates only transform, opacity and stroke-dashoffset. The scene root's
+  `data-anim` (`on` / `paused` when hidden or off-screen / `off` for reduced motion)
+  switches every animation.
+- Dev-only state previews: `npm run dev`, then open `/?cityFixture`. The selector and
+  status text are labelled DEV FIXTURE and are compiled out of production builds.
+- Not done: `src/app/page.tsx` never sets `reopened`, so the worker never goes to the
+  Archive yet. Worker at Archive needs a page-level flag (outside the city files).
