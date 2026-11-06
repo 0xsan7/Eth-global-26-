@@ -22,7 +22,7 @@ import {
   MAX_BRIEF_WORDS,
 } from "../../src/lib/shared/briefmint-validation";
 import { briefStateToScene } from "../../src/components/city/brief-state-to-scene";
-import { PLAZA } from "../../src/components/city/scene-config";
+import { BUILDING_BY_ID } from "../../src/components/city/scene-config";
 
 const params = (over: Partial<PublicParameters> = {}): PublicParameters => ({
   category: "writing",
@@ -180,9 +180,12 @@ test("opportunity text filter narrows without inventing records", () => {
   assert.equal(filterOpportunities(list, {}).length, 2);
 });
 
-test("briefStateToScene maps workflow state to buildings, idle to plaza", () => {
-  assert.deepEqual({ x: briefStateToScene(null).x, y: briefStateToScene(null).y }, PLAZA);
-  assert.equal(briefStateToScene(brief({ executionStatus: "draft" })).building, "home");
+test("briefStateToScene parks the worker at the Planning Desk when idle", () => {
+  const home = BUILDING_BY_ID.home.waypoint;
+  const idle = briefStateToScene(null);
+  assert.equal(idle.building, "home", "no active brief parks at the Planning Desk");
+  assert.deepEqual({ x: idle.x, y: idle.y }, home);
+  assert.deepEqual({ x: briefStateToScene(brief({ executionStatus: "draft" })).x, y: briefStateToScene(brief({ executionStatus: "draft" })).y }, home);
   assert.equal(briefStateToScene(brief({ executionStatus: "running" })).building, "studio");
   assert.equal(briefStateToScene(brief({ executionStatus: "ready" })).building, "treasury");
   const approvedLive = brief({
@@ -232,7 +235,6 @@ import {
   STREET_X,
   STREET_Y,
 } from "../../src/components/city/walk-path";
-import { BUILDING_BY_ID } from "../../src/components/city/scene-config";
 import type { BriefFreshness, ExecutionStatus, PublicationStatus, ReviewStatus } from "../../src/lib/shared/briefmint";
 
 const EXECUTIONS: Array<ExecutionStatus | null> = [null, "draft", "running", "ready", "failed", "interrupted"];
@@ -272,7 +274,7 @@ const input = (over: Partial<CityStateInput>): CityStateInput => ({
 
 test("city mapping: worker location table", () => {
   const loc = (over: Partial<CityStateInput>) => deriveCityState(input(over)).worker;
-  assert.equal(deriveCityState(NO_BRIEF_INPUT).worker.building, null);
+  assert.equal(deriveCityState(NO_BRIEF_INPUT).worker.building, "home");
   assert.deepEqual(loc({ execution: "draft" }), { building: "home", pose: "working", carry: "notes", unresolved: false });
   assert.equal(loc({ execution: "running" }).building, "studio");
   assert.equal(loc({ execution: "ready" }).building, "treasury");
@@ -334,7 +336,7 @@ test("city mapping: truthfulness invariants hold for every state combination", (
     // Waiting pose only for pending publication of a ready brief.
     if (s.worker.pose === "waiting") assert.equal(s.registry, "pending", ctx);
     if (i.execution === "ready" && s.registry === "pending") assert.equal(s.worker.building, "registry", ctx);
-    if (i.execution === null) assert.equal(s.worker.building, null, ctx);
+    if (i.execution === null) assert.equal(s.worker.building, "home", ctx);
   }
 });
 
