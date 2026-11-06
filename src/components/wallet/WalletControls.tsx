@@ -16,12 +16,6 @@ export function truncateAddress(address: string): string {
   return address.length > 10 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
 }
 
-/** Presentation-only friendly names for wallet connectors. No logic depends on these. */
-function connectorLabel(name: string): string {
-  if (/injected/i.test(name)) return "Browser wallet";
-  return name;
-}
-
 function chainLabel(chainId: number | undefined): string {
   if (chainId === WHITECHAIN_ID) return whitechain.name;
   if (chainId === ARKIV_RABDI_ID) return arkivChain.name;
@@ -51,53 +45,57 @@ export default function WalletControls({
   const wrongNetwork = isConnected && chainId !== expectedChainId;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.9rem" }}>
+    <div className="wallet">
       {!isConnected ? (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className="wallet-row">
           {connectors.map((connector) => (
             <button
               key={connector.uid}
               type="button"
+              className="btn btn-primary btn-sm"
               disabled={isConnecting}
               onClick={() => connect({ connector })}
-              title={connectors.length > 1 ? connectorLabel(connector.name) : "Connect your wallet to start"}
             >
-              {isConnecting ? "Connecting…" : connectors.length > 1 ? `Connect wallet (${connectorLabel(connector.name)})` : "Connect wallet"}
+              {isConnecting ? "Connecting…" : `Connect ${connector.name === "Injected" ? "wallet" : connector.name}`}
             </button>
           ))}
         </div>
       ) : (
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-          <span title={address}>
-            Wallet: {address ? truncateAddress(address) : "—"} ({chainLabel(chainId)})
+        <div className="wallet-row">
+          <span className="wallet-chip" title={address}>
+            <span className="wallet-dot" aria-hidden="true" />
+            {address ? truncateAddress(address) : "—"} <span className="wallet-chain">{chainLabel(chainId)}</span>
           </span>
           <button
             type="button"
+            className="btn btn-sm btn-ghost"
             disabled={isSwitching || chainId === WHITECHAIN_ID}
             onClick={() => switchChain({ chainId: WHITECHAIN_ID })}
-            title="Whitechain network (legacy checkout)"
+            title="Legacy checkout network"
           >
             {whitechain.name}
           </button>
           <button
             type="button"
+            className="btn btn-sm btn-ghost"
             disabled={isSwitching || chainId === ARKIV_RABDI_ID}
             onClick={() => switchChain({ chainId: ARKIV_RABDI_ID })}
-            title="Arkiv Rabdi network (opportunity publication)"
+            title="Arkiv publication network"
           >
             {arkivChain.name}
           </button>
-          <button type="button" onClick={() => disconnect()}>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => disconnect()}>
             Disconnect
           </button>
         </div>
       )}
 
       {wrongNetwork && (
-        <p role="status" style={{ margin: 0 }}>
+        <p role="status" className="wallet-warn">
           Wrong network: this screen expects {chainLabel(expectedChainId)}.{" "}
           <button
             type="button"
+            className="btn btn-sm"
             disabled={isSwitching}
             onClick={() => switchChain({ chainId: expectedChainId })}
           >
@@ -106,14 +104,15 @@ export default function WalletControls({
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+      <div className="wallet-row">
         {session.loading ? (
-          <span>Checking session…</span>
+          <span className="wallet-hint">Checking session…</span>
         ) : sessionAddress ? (
           <>
-            <span title={sessionAddress}>Logged in: {truncateAddress(sessionAddress)}</span>
+            <span className="wallet-hint" title={sessionAddress}>Signed in as {truncateAddress(sessionAddress)}</span>
             <button
               type="button"
+              className="btn btn-sm btn-ghost"
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
             >
@@ -124,23 +123,24 @@ export default function WalletControls({
           <>
             <button
               type="button"
+              className="btn btn-primary btn-sm"
               disabled={login.isPending}
               onClick={() => login.mutate(address)}
               title="Sign a login challenge (not a payment authorization)"
             >
               {login.isPending ? "Signing…" : "Log in with wallet"}
             </button>
-            {login.isError && <span role="alert">Login failed — signature declined or expired.</span>}
+            {login.isError && <span role="alert" className="wallet-warn">Login failed — signature declined or expired.</span>}
           </>
         ) : (
-          <span>Connect a wallet, then log in.</span>
+          <span className="wallet-hint">Connect a wallet, then sign in.</span>
         )}
       </div>
 
-      {connectError && <p role="alert" style={{ margin: 0 }}>{connectError.message}</p>}
-      {switchError && <p role="alert" style={{ margin: 0 }}>{switchError.message}</p>}
+      {connectError && <p role="alert" className="wallet-warn">{connectError.message}</p>}
+      {switchError && <p role="alert" className="wallet-warn">{switchError.message}</p>}
       {logout.isError && (
-        <p role="alert" style={{ margin: 0 }}>
+        <p role="alert" className="wallet-warn">
           Logout did not reach the server, but local private state was cleared.
         </p>
       )}

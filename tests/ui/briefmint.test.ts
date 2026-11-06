@@ -337,7 +337,30 @@ test("city mapping: truthfulness invariants hold for every state combination", (
     if (s.worker.pose === "waiting") assert.equal(s.registry, "pending", ctx);
     if (i.execution === "ready" && s.registry === "pending") assert.equal(s.worker.building, "registry", ctx);
     if (i.execution === null) assert.equal(s.worker.building, "home", ctx);
+    // Quest marker: never on running work; warn only for unresolved work or bad reads.
+    if (i.execution === "running") assert.equal(s.quest, null, ctx);
+    if (s.quest?.kind === "warn") {
+      assert.ok(s.worker.unresolved || s.registry === "stale" || s.registry === "unavailable", ctx);
+    }
+    if (s.quest?.kind === "wait") assert.equal(s.registry, "pending", ctx);
+    if (s.worker.unresolved) assert.deepEqual(s.quest, { building: "studio", kind: "warn" }, ctx);
   }
+});
+
+test("city mapping: quest marker points at the next real step", () => {
+  const q = (over: Partial<CityStateInput>) => deriveCityState(input(over)).quest;
+  assert.deepEqual(deriveCityState(NO_BRIEF_INPUT).quest, { building: "home", kind: "action" });
+  assert.deepEqual(q({ execution: "draft" }), { building: "studio", kind: "action" });
+  assert.equal(q({ execution: "running" }), null);
+  assert.deepEqual(q({}), { building: "treasury", kind: "action" });
+  const approved = { review: "approved" as const, approvalCurrent: true };
+  assert.deepEqual(q(approved), { building: "registry", kind: "action" });
+  assert.deepEqual(q({ ...approved, publication: "pending" }), { building: "registry", kind: "wait" });
+  assert.equal(q({ ...approved, publication: "live", publicationConfirmed: true }), null);
+  assert.deepEqual(q({ ...approved, publication: "live", publicationConfirmed: true, freshness: "stale" }), {
+    building: "registry",
+    kind: "warn",
+  });
 });
 
 test("city mapping: adapter from PrivateBrief", () => {
@@ -390,4 +413,56 @@ test("walk path: routes stay on streets and timing is proportional", () => {
   assert.equal(mid.dx, 1);
   assert.deepEqual(pointAlong(r1, 1), { x: studio.x, y: studio.y, dx: 0 });
   assert.deepEqual(streetRoute(home, studio), r1);
+});
+
+// --- Isometric game layout (pure) ---
+import {
+  doorFor,
+  isRoadCell,
+  isoRoute,
+  KEY_PLOTS,
+  ROAD_CENTRES,
+  GRID_N,
+  SAND_RING,
+  toWorld,
+} from "../../src/components/city/iso-layout";
+
+const IDS = ["home", "studio", "treasury", "registry", "archive"] as const;
+
+test("iso layout: plots sit on land, off roads and apart", () => {
+  for (const id of IDS) {
+    const p = KEY_PLOTS[id];
+    for (let x = p.gx; x < p.gx + p.size; x++)
+      for (let y = p.gy; y < p.gy + p.size; y++) {
+        assert.equal(isRoadCell(x, y), false, `${id} overlaps road at ${x},${y}`);
+        assert.ok(x >= SAND_RING && y >= SAND_RING && x < GRID_N - SAND_RING && y < GRID_N - SAND_RING);
+      }
+    const d = doorFor(id);
+    assert.ok(isRoadCell(Math.floor(d.gx), Math.floor(d.gy)), `${id} door is on a road`);
+  }
+  assert.deepEqual(toWorld({ gx: 1, gy: 0 }), { x: 20, y: 10 });
+});
+
+test("iso layout: routes between every pair stay on road centrelines", () => {
+  const onCentre = (v: number) => ROAD_CENTRES.some((c) => Math.abs(c - v) < 1e-9);
+  for (const a of IDS)
+    for (const b of IDS) {
+      const r = isoRoute(doorFor(a), doorFor(b));
+      assert.deepEqual(r[0], doorFor(a));
+      assert.deepEqual(r[r.length - 1], doorFor(b));
+      assert.ok(r.length <= 4, `${a}->${b} turns at most twice`);
+      for (let k = 1; k < r.length; k++) {
+        const p = r[k - 1];
+        const q = r[k];
+        const alongCol = p.gx === q.gx && onCentre(p.gx);
+        const alongRow = p.gy === q.gy && onCentre(p.gy);
+        assert.ok(alongCol || alongRow, `${a}->${b} segment ${k} follows a road`);
+      }
+      assert.deepEqual(isoRoute(doorFor(a), doorFor(b)), r);
+    }
+  // Re-targeting from a point mid-way along a row road.
+  const mid = { gx: 9, gy: ROAD_CENTRES[1] };
+  const r = isoRoute(mid, doorFor("archive"));
+  assert.equal(r[1].gy, ROAD_CENTRES[1]);
+  assert.throws(() => isoRoute({ gx: 7.2, gy: 7.3 }, doorFor("home")));
 });
