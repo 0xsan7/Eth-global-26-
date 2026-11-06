@@ -50,6 +50,33 @@ async function confirmCreate() {
 }
 
 describe("publication intent and independent reconciliation", () => {
+  it.each(["pending", "reverted", "wrong-owner", "wrong-payload", "wrong-expiry", "wrong-entity", "wrong-chain"])("rejects a manual %s recovery candidate without binding or unlocking it", async failure => {
+    const intent = await service.prepare(owner, id, request());
+    await service.reconcile(owner, id, reconcile());
+    receipt = { status: "confirmed", chainId: 7794095, signer: owner, entityKeys: [key], blockNumber: "101" };
+    record = { entityKey: key, ownerAddress: owner, payload: intent.payload, expiresAtBlock: intent.expiresAtBlock, observedAtBlock: "101", observedAt: time };
+    if (failure === "pending") receipt = { status: "pending", chainId: 7794095, signer: null, entityKeys: [], blockNumber: null };
+    if (failure === "reverted") receipt = { status: "reverted", chainId: 7794095, signer: owner, entityKeys: [], blockNumber: "101" };
+    if (failure === "wrong-owner") receipt = { status: "confirmed", chainId: 7794095, signer: other, entityKeys: [key], blockNumber: "101" };
+    if (failure === "wrong-payload") record.payload = { ...record.payload, title: "Unapproved title" };
+    if (failure === "wrong-expiry") record.expiresAtBlock = "999999";
+    if (failure === "wrong-entity") record.entityKey = tx;
+    if (failure === "wrong-chain") reader.transaction = async () => ({ ...receipt, chainId: 1 } as unknown as typeof receipt);
+    await expect(service.reconcile(owner, id, { ...reconcile(tx), recovery: true })).rejects.toBeDefined();
+    expect(db.prepare("SELECT transaction_hash FROM brief_publications WHERE intent_id=?").get(intentId)).toMatchObject({ transaction_hash: null });
+    expect(getBrief(db, owner, id)).toMatchObject({ draftRevision: 1, review: brief.review, publication: { status: "pending", pending: { state: "unknown", transactionHash: null } } });
+    await expect(service.prepare(owner, id, request())).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+  });
+  it("recovers a known confirmed hash only after matching receipt and approved entity, without any writer", async () => {
+    const intent = await service.prepare(owner, id, request());
+    await service.reconcile(owner, id, reconcile());
+    receipt = { status: "confirmed", chainId: 7794095, signer: owner, entityKeys: [key], blockNumber: "101" };
+    record = { entityKey: key, ownerAddress: owner, payload: intent.payload, expiresAtBlock: intent.expiresAtBlock, observedAtBlock: "101", observedAt: time };
+    const result = await service.reconcile(owner, id, { ...reconcile(tx), recovery: true });
+    expect(result).toMatchObject({ pending: false, brief: { draftRevision: 1, review: brief.review, publication: { status: "live", confirmed: { entityKey: key, lastConfirmedTransaction: tx } } } });
+    expect(await service.reconcile(owner, id, { ...reconcile(tx), recovery: true })).toMatchObject({ pending: false });
+    expect((db.prepare("SELECT COUNT(*) AS count FROM brief_publications").get() as { count: number }).count).toBe(1);
+  });
   it("distinguishes revalidated preparation, unknown broadcast, delayed receipt and reverted evidence", async () => {
     await service.prepare(owner, id, request());
     expect(getBrief(db, owner, id).publication.pending?.state).toBe("prepared");

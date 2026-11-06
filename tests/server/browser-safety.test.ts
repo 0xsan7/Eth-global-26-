@@ -3,6 +3,7 @@ import { assertPreparedIntentMatches, readPublicationRecovery, storePublicationR
 import { sessionMatchesWallet } from "../../src/lib/client/session-identity";
 import { advanceSessionGeneration, currentSessionGeneration, enqueueCookieMutation, endCookieSession, runCookieLogout, completeCookieLogout, cookieLogoutPending, sessionBlockReason, isCurrentSessionGeneration, setSessionBlock } from "../../src/lib/client/session-generation";
 import { BRIEFMINT_CHAIN_ID, hashPublicOpportunity, type PublicationIntent, type PublicOpportunity } from "../../src/lib/shared/briefs";
+import type { ArkivWriteDiagnostic } from "../../src/lib/arkiv/briefmint/write";
 
 class MemoryStorage {
   values = new Map<string, string>();
@@ -17,6 +18,19 @@ const owner = `0x${"1".repeat(40)}`;
 afterEach(() => { vi.unstubAllGlobals(); setSessionBlock(null); });
 
 describe("browser publication and wallet safety", () => {
+  it("retains sanitized submission diagnostics and a broadcast hash across recovery reads", () => {
+    const storage = new MemoryStorage();
+    const diagnostic: ArkivWriteDiagnostic = { phase: "wallet_confirmation", method: "eth_sendTransaction", rpcCode: null,
+      chainId: 7794095, nonceBeforeSend: "0x0", target: `0x${"4".repeat(40)}`, calldataHash: hex("c"), transactionHash: null,
+      observedAt: "2026-11-06T00:00:00.000Z" };
+    const base = { intentId: hex("a"), operation: "create" as const, entityKey: null };
+    storePublicationRecovery(storage, "brief", { ...base, transactionHash: null, diagnostic });
+    expect(readPublicationRecovery(storage, "brief", base.intentId)?.diagnostic).toEqual(diagnostic);
+    storePublicationRecovery(storage, "brief", { ...base, transactionHash: hex("b"), diagnostic: { ...diagnostic, phase: "broadcast", transactionHash: hex("b") } });
+    // A refreshed client/new reader still prioritizes the immutable hash record.
+    storePublicationRecovery(storage, "brief", { ...base, transactionHash: null, diagnostic });
+    expect(readPublicationRecovery(storage, "brief", base.intentId)).toMatchObject({ transactionHash: hex("b"), diagnostic: { phase: "broadcast", nonceBeforeSend: "0x0" } });
+  });
   it("retains the winner's broadcast hash when a losing tab writes pre-arm state later", () => {
     const storage = new MemoryStorage();
     const base = { intentId: hex("a"), operation: "create" as const, entityKey: null };

@@ -273,6 +273,8 @@ export const preparePublicationRequestSchema = z.strictObject({
 });
 export const reconcilePublicationRequestSchema = z.strictObject({
   intentId: briefIdSchema, transactionHash: briefIdSchema.nullable(), entityKey: briefIdSchema.nullable(),
+  /** Manually supplied hashes must pass receipt/readback verification before binding. */
+  recovery: z.literal(true).optional(),
 });
 export const listBriefsQuerySchema = z.strictObject({ beforeId: briefIdSchema.optional() });
 /** Omitted audience preserves the original owner-only private download. Public means current approved projection. */

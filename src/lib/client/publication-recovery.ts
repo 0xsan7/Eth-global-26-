@@ -1,6 +1,7 @@
 import { canonicalPublicJson, type PublicationIntent, type PublicOpportunity, type Hex } from "../shared/briefmint";
+import type { ArkivWriteDiagnostic } from "../arkiv/briefmint/write";
 
-export type StoredIntent = Pick<PublicationIntent, "intentId" | "operation" | "entityKey"> & { transactionHash?: Hex | null };
+export type StoredIntent = Pick<PublicationIntent, "intentId" | "operation" | "entityKey"> & { transactionHash?: Hex | null; diagnostic?: ArkivWriteDiagnostic };
 type RecoveryStorage = Pick<Storage, "length" | "key" | "getItem" | "setItem" | "removeItem">;
 const prefix = (briefId: string) => `briefmint.pendingIntent.${briefId}`;
 const isHex = (value: unknown): value is Hex => typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EntityMutationError } from "@arkiv-network/sdk";
 import { hexToString, type Transport } from "viem";
-import { writeArkivIntent, arkivBroadcastTransactionHash } from "../../src/lib/arkiv/briefmint/write";
+import { writeArkivIntent, arkivBroadcastTransactionHash, arkivFailureDiagnostic, type ArkivWriteDiagnostic } from "../../src/lib/arkiv/briefmint/write";
 import { BriefmintOpportunitySchema } from "../../src/lib/arkiv/briefmint/schema";
 import { hashPublicOpportunity, projectPublicOpportunity, type PublicationIntent } from "../../src/lib/shared/briefs";
 
@@ -22,9 +22,10 @@ async function intent(operation: PublicationIntent["operation"] = "create"): Pro
     payload, publicPayloadHash: await hashPublicOpportunity(payload), expiresAtBlock: "1000", createdAt: "2026-11-06T00:00:00.000Z" };
 }
 function wallet(chain = 7794095, account = owner) {
-  return { request: vi.fn(async ({ method }: { method: string }) => {
+  return { request: vi.fn(async ({ method }: { method: string }): Promise<unknown> => {
     if (method === "eth_chainId") return `0x${chain.toString(16)}`;
     if (method === "eth_accounts") return [account];
+    if (method === "eth_getTransactionCount") return "0x0";
     if (method === "eth_sendTransaction") return tx;
     throw new Error("Unexpected offline RPC");
   }) };
@@ -54,14 +55,43 @@ describe("owner-signed Arkiv SDK write boundary (offline)", () => {
   });
   it("reports the broadcast hash before receipt waiting fails, even if recovery persistence throws", async () => {
     const onBroadcast = vi.fn(() => { throw new Error("Synthetic storage failure"); });
+    const diagnostics: ArkivWriteDiagnostic[] = [];
     mock.create.mockImplementationOnce(async () => {
       const transport = mock.config!.transport({ retryCount: 0 });
       expect(await transport.request({ method: "eth_sendTransaction", params: [] })).toBe(tx);
       expect(onBroadcast).toHaveBeenCalledWith(tx);
       throw new EntityMutationError("Synthetic receipt timeout", { txHash: tx });
     });
-    try { await writeArkivIntent(await intent(), "", wallet(), onBroadcast); throw new Error("Expected receipt failure"); }
+    try { await writeArkivIntent(await intent(), "", wallet(), onBroadcast, value => diagnostics.push(value)); throw new Error("Expected receipt failure"); }
     catch (error) { expect(arkivBroadcastTransactionHash(error)).toBe(tx); }
     expect(mock.create).toHaveBeenCalledOnce();
+    expect(diagnostics.map(value => value.phase)).toEqual(["wallet_confirmation", "broadcast"]);
+    expect(diagnostics[1]).toMatchObject({ transactionHash: tx, nonceBeforeSend: "0x0" });
+  });
+  it.each([4001, -32601, -32602, -32000])("preserves sanitized wallet RPC %i evidence without retrying a failed submission", async code => {
+    const provider = wallet(); const request = provider.request.getMockImplementation()!;
+    provider.request.mockImplementation(async args => {
+      if (args.method === "eth_sendTransaction") throw { code, message: "SYNTHETIC SENSITIVE ERROR DETAIL" };
+      return request(args);
+    });
+    const diagnostics: ArkivWriteDiagnostic[] = []; const broadcast = vi.fn();
+    mock.create.mockImplementationOnce(async () => mock.config!.transport({ retryCount: 9 }).request({ method: "eth_sendTransaction",
+      params: [{ to: "0x4400000000000000000000000000000000000044", data: "0x1234" }] }));
+    let failure: unknown;
+    try { await writeArkivIntent(await intent(), "", provider, broadcast, value => diagnostics.push(value)); } catch (error) { failure = error; }
+    expect(failure).toBeDefined(); expect(arkivFailureDiagnostic(failure)).toContain(`RPC ${code}`);
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(provider.request.mock.calls.filter(([args]) => args.method === "eth_sendTransaction")).toHaveLength(1);
+    expect(diagnostics.at(-1)).toMatchObject({ phase: "rpc_failed", method: "eth_sendTransaction", rpcCode: code, nonceBeforeSend: "0x0", transactionHash: null });
+    expect(JSON.stringify(diagnostics)).not.toContain("SENSITIVE");
+    expect(diagnostics[0].calldataHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+  it("keeps an ambiguous wallet response distinct from a broadcast hash", async () => {
+    const provider = wallet(); const request = provider.request.getMockImplementation()!;
+    provider.request.mockImplementation(async args => args.method === "eth_sendTransaction" ? null : request(args));
+    const diagnostics: ArkivWriteDiagnostic[] = []; const broadcast = vi.fn();
+    mock.create.mockImplementationOnce(async () => mock.config!.transport({ retryCount: 0 }).request({ method: "eth_sendTransaction", params: [] }));
+    await expect(writeArkivIntent(await intent(), "", provider, broadcast, value => diagnostics.push(value))).rejects.toThrow(/no valid broadcast/);
+    expect(broadcast).not.toHaveBeenCalled(); expect(diagnostics.at(-1)?.phase).toBe("invalid_wallet_response");
   });
 });

@@ -14,7 +14,9 @@ import { useArmPublication, useReconcilePublication, useRefreshPublication } fro
 import { currentSessionGeneration, isCurrentSessionGeneration } from "@/lib/client/session-generation";
 import {
   arkivBroadcastTransactionHash,
+  arkivFailureDiagnostic,
   writeArkivIntent,
+  type ArkivWriteDiagnostic,
 } from "@/lib/arkiv/briefmint/write";
 import {
   hashPublicOpportunity,
@@ -40,6 +42,9 @@ function randomIntentId(): Hex {
   globalThis.crypto.getRandomValues(bytes);
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
+function readLocalRecovery(briefId: string, intentId: string) {
+  try { return readPublicationRecovery(localStorage, briefId, intentId); } catch { return null; }
+}
 
 async function assertWalletReady(intent: Awaited<ReturnType<typeof validatePublicationIntent>>, provider: EthereumProvider): Promise<void> {
   const [accounts, rawChainId] = await Promise.all([
@@ -63,6 +68,8 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
+  const [manualHash, setManualHash] = useState("");
+  const [diagnostic, setDiagnostic] = useState<ArkivWriteDiagnostic | null>(null);
   const arm = useArmPublication();
   const reconcile = useReconcilePublication();
   const refresh = useRefreshPublication();
@@ -126,16 +133,26 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       let entityKey: Hex | null;
       try {
         const receipt = await writeArkivIntent(checkedIntent, accessKey.trim(), provider, (hash) => {
-          storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash: hash, entityKey: checkedIntent.entityKey as Hex | null });
+          try { storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash: hash, entityKey: checkedIntent.entityKey as Hex | null }); } catch { /* Still persist to the server below. */ }
+          // Record the observed broadcast immediately, without waiting for the
+          // SDK's receipt polling. This endpoint only observes; it never sends.
+          void briefmintApi.reconcilePublication(brief.id, { intentId, transactionHash: hash, entityKey: checkedIntent.entityKey }, address)
+            .then((result) => { if (isCurrentSessionGeneration(generation)) onSaved(result.brief); })
+            .catch(() => { /* Local hash remains available for explicit recovery. */ });
           if (isCurrentSessionGeneration(generation)) setLastTx(hash);
+        }, (value) => {
+          storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash: value.transactionHash,
+            entityKey: checkedIntent.entityKey as Hex | null, diagnostic: value });
+          if (isCurrentSessionGeneration(generation)) setDiagnostic(value);
         });
         transactionHash = receipt.transactionHash as Hex;
         entityKey = receipt.entityKey as Hex;
       } catch (e) {
-        const uncertain = arkivBroadcastTransactionHash(e);
+        const uncertain = arkivBroadcastTransactionHash(e)
+          ?? readLocalRecovery(brief.id, intentId)?.transactionHash;
         if (!uncertain) {
           setPhase("pending");
-          setError("The attempt was armed but returned no transaction hash. Its outcome is uncertain; do not sign again.");
+          setError(`${arkivFailureDiagnostic(e)}: no broadcast hash was returned. The attempt remains locked; do not sign again.`);
           return;
         }
         transactionHash = uncertain as Hex;
@@ -191,11 +208,17 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
     setError(null);
     const current = brief.publication.pending;
     if (!current || current.state === "prepared") return;
-    const found = readPublicationRecovery(localStorage, brief.id, current.intent.intentId);
+    const found = readLocalRecovery(brief.id, current.intent.intentId);
     const saved = found?.intentId === current.intent.intentId ? found : null;
-    const transactionHash = current.transactionHash ?? saved?.transactionHash ?? null;
+    const priorDiagnostic = saved?.diagnostic;
+    if (priorDiagnostic && ["wallet_confirmation", "broadcast", "rpc_failed", "invalid_wallet_response", "receipt_confirmed"].includes(priorDiagnostic.phase)
+      && /^eth_[A-Za-z0-9_]{1,60}$/.test(priorDiagnostic.method)
+      && (priorDiagnostic.rpcCode === null || Number.isSafeInteger(priorDiagnostic.rpcCode))) setDiagnostic(priorDiagnostic);
+    const knownHash = current.transactionHash ?? saved?.transactionHash ?? null;
+    const candidate = manualHash.trim().toLowerCase();
+    const transactionHash = knownHash ?? (/^0x[0-9a-f]{64}$/.test(candidate) ? candidate as Hex : null);
     if (!transactionHash) {
-      setError("No transaction hash is available. The attempt remains locked; do not sign again.");
+      setError("No valid transaction hash is available. Obtain the actual hash from the wallet or explorer; the attempt remains locked.");
       setPhase("pending");
       return;
     }
@@ -208,6 +231,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
           intentId: current.intent.intentId,
           transactionHash,
           entityKey: saved?.entityKey ?? current.intent.entityKey,
+          ...(!current.transactionHash ? { recovery: true as const } : {}),
         },
       });
       if (isCurrentSessionGeneration(generation)) onSaved(result.brief);
@@ -264,10 +288,18 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
         </p>
       )}
       {lastTx && <p className="tc-mono tc-muted">Broadcast tx: {lastTx} — confirmation status is shown above.</p>}
+      {diagnostic && <p className="tc-muted" role="status">Wallet stage: {diagnostic.phase} · {diagnostic.method}{diagnostic.rpcCode === null ? "" : ` · RPC ${diagnostic.rpcCode}`}</p>}
       {phase === "reconciling" && <p role="status">Reconciling on-chain entity with the backend…</p>}
       {phase === "pending" && <p role="status">Publication remains locked until the backend confirms its outcome.</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {phase === "done" && <p className="notice" role="status">Reconciliation finished — see the confirmed status above.</p>}
+      {pending && pending.state !== "prepared" && !pending.transactionHash && (
+        <div className="form-field">
+          <label htmlFor="arkiv-recovery-hash">Known transaction hash for recovery (optional; never invent one)</label>
+          <input id="arkiv-recovery-hash" value={manualHash} onChange={(event) => setManualHash(event.target.value)} placeholder="0x… actual wallet or explorer hash" disabled={phase === "reconciling"} />
+          <p className="tc-muted">Manual recovery verifies chain, sender, engine receipt and exact approved entity before binding the hash. This sends no transaction.</p>
+        </div>
+      )}
       <div className="btn-row">
         {pending?.state === "prepared" && (
           <button type="button" className="btn btn-primary" disabled={phase === "preparing" || phase === "signing" || phase === "reconciling" || arm.isPending} onClick={() => run(pending.intent.operation)}>
