@@ -1,6 +1,6 @@
 # 0G first-request preflight
 
-Current operator command and Part 1 readiness findings: [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md). The history below remains the record of the earlier preflight and failed operator request.
+Current operator-reported evidence and runtime command: [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md). The history below preserves the earlier preflight and HTTP 502 attempt; a later single standalone request succeeded with incomplete Router verification metadata.
 
 Base backend checkpoint: `a99a0d2`. Scope: necessary smoke safety, compatibility and reporting fixes only. No frontend, private database, payment, Whitechain or Arkiv changes in that preflight checkpoint. No API key accessed by the assistant. The operator's one failed authenticated attempt is recorded below. Full-PRD completion at preflight was approximately **55%**; see [the current backend checkpoint](backend-checkpoint.md) for later local implementation progress. Catalog inspection or the failed request earns no live-inference completion credit.
 

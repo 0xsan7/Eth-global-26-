@@ -1,6 +1,6 @@
 # BriefMint live validation and submission gate
 
-This is the shortest ordered operator checklist. It is a procedure, not evidence of a completed journey. Current evidence: the recorded 0G request failed with HTTP 502 / `PROVIDER_UNAVAILABLE`; `mayHaveBeenBilled=true` means debit is uncertain. No successful inference, independent response verification, BriefMint Arkiv record/lifecycle, production host, or persistent-volume restart is established. Do not claim a funded bounty, production readiness, or end-to-end completion from local builds.
+This is the shortest ordered operator checklist. It is a procedure, not evidence of a completed app journey. The operator reports one standalone 0G probe returned HTTP 200 in 9,133 ms with valid structured output, 668 reported tokens, request ID `077bd220-2efa-4bbd-bb1f-3b3964ff0038`, and model `0gm-1.0-35b-a3b`; Router verification and routing tier were null and the probe reported `completed_evidence_incomplete`. Debit/credit source and independent response verification remain unknown. No BriefMint UI generation, Arkiv record/lifecycle, production host, or persistent-volume restart is established. Do not make another billable request without separate explicit authorization or claim production readiness/end-to-end completion from local builds.
 
 ## 1. Safe local checks
 

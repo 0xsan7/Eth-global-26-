@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "dev": "next dev",
+    "dev:briefmint-0g": "node scripts/dev-briefmint-0g.mjs",
     "build": "npm run demo:build && next build && node scripts/prepare-standalone.ts",
     "start": "node .next/standalone/server.js",
     "lint": "eslint src tests examples scripts contracts/test hardhat.config.ts vitest.config.ts",
