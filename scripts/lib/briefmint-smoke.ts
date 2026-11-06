@@ -7,6 +7,7 @@ export const SMOKE_MODEL_ID = "0gm-1.0-35b-a3b";
 export const SMOKE_BASE_URL = "https://router-api.0g.ai/v1";
 const LIVE_FLAG = "--authorize-paid-inference";
 const MAX_TOKENS = 1200;
+type SafeRouterError = { type: string | null; code: string | null; requestId: string | null };
 class SmokeFailure extends Error {
   constructor(readonly code: string) { super(code); }
 }
@@ -38,6 +39,21 @@ function containsCredential(value: unknown, key: string): boolean {
   if (typeof value === "string") return value.includes(key);
   return value !== null && typeof value === "object" && Object.values(value).some(item => containsCredential(item, key));
 }
+function safeToken(value: unknown, credential?: string): string | null {
+  return typeof value === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(value)
+    && (!credential || !value.includes(credential)) ? value : null;
+}
+async function safeRouterError(response: Response, credential?: string): Promise<SafeRouterError> {
+  const failure: SafeRouterError = { type: null, code: null,
+    requestId: safeToken(response.headers.get("x-request-id") ?? response.headers.get("x-0g-request-id"), credential) };
+  try {
+    const body = JSON.parse(await readBoundedText(response.clone().body, 16000));
+    failure.type = safeToken(body?.error?.type, credential);
+    failure.code = safeToken(body?.error?.code, credential);
+    failure.requestId ??= safeToken(body?.request_id ?? body?.x_0g_trace?.request_id, credential);
+  } catch { /* Never replace the provider's original response/error with diagnostic parsing. */ }
+  return failure;
+}
 /** No file/env loader, database, wallet, payment or Arkiv imports. Native fetch has no retry policy. */
 export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, io: {
   log: (line: string) => void; error: (line: string) => void;
@@ -48,6 +64,7 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
   }
   let config: BriefInferenceEnv | undefined; let phase = "configuration";
   let inferenceRequests = 0; let inferenceStart: number | null = null; let httpStatus: number | null = null;
+  let routerError: SafeRouterError | null = null;
   const duration = (start: number) => Math.max(0, Math.round(clock() - start));
   try {
     config = settings(env);
@@ -83,7 +100,9 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
       if (inferenceRequests !== 0 || String(url) !== `${SMOKE_BASE_URL}/chat/completions` || init?.method !== "POST") throw new SmokeFailure("REQUEST_BOUNDARY_VIOLATION");
       inferenceRequests++;
       const actual = await fetcher(url, { ...init, redirect: "error" });
-      httpStatus = actual.status; return actual;
+      httpStatus = actual.status;
+      if (!actual.ok) routerError = await safeRouterError(actual, config?.inferenceKey);
+      return actual;
     };
     const provider = createBriefInferenceProvider(config, singleRequestFetch, { maxTokens: MAX_TOKENS, disableThinking: true, jsonMode: true });
     provider.assertReady(); inferenceStart = clock();
@@ -105,9 +124,11 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
     const allowed = ["CONFIGURATION_INVALID", "API_KEY_NOT_CONFIGURED", "CATALOG_UNAVAILABLE", "CATALOG_INCOMPATIBLE", "REQUEST_BOUNDARY_VIOLATION", "METADATA_REDACTED", "PROVIDER_UNAVAILABLE", "PROVIDER_FAILED", "EXECUTION_INTERRUPTED"];
     const candidate = error instanceof Error && "code" in error ? String(error.code) : "";
     const code = allowed.includes(candidate) ? candidate : phase === "catalog" ? "CATALOG_UNAVAILABLE" : "PREFLIGHT_FAILED";
-    io.error(JSON.stringify({ status: "failed", phase, code, inferenceRequests, httpStatus,
+    const report = { status: "failed", phase, code, inferenceRequests, httpStatus, routerError,
       latencyMs: inferenceStart === null ? null : duration(inferenceStart),
-      mayHaveBeenBilled: inferenceRequests > 0, automaticRetry: false }));
+      mayHaveBeenBilled: inferenceRequests > 0, automaticRetry: false };
+    if (!config?.inferenceKey || !containsCredential(report, config.inferenceKey)) io.error(JSON.stringify(report));
+    else io.error(JSON.stringify({ ...report, routerError: null, code: "METADATA_REDACTED" }));
     return 1;
   }
 }

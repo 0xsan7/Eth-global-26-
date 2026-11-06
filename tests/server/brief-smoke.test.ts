@@ -95,6 +95,16 @@ describe("guarded 0G smoke — injected network only", () => {
     expect(await test.run()).toBe(1); expect(test.requests).toHaveLength(2);
     expect(test.requests[1].init?.redirect).toBe("error"); expect(test.errors.join("\n")).not.toContain("sensitive");
   });
+  it("reports only allowlisted 0G error metadata while suppressing the raw error message", async () => {
+    const test = setup({ completion: () => Response.json({
+      error: { type: "server_error", code: "provider_error", message: `sensitive prompt ${syntheticKey}` }, request_id: "req_safe-123",
+    }, { status: 502 }) });
+    expect(await test.run()).toBe(1); expect(test.requests).toHaveLength(2);
+    const report = JSON.parse(test.errors[0]);
+    expect(report).toMatchObject({ httpStatus: 502, routerError: { type: "server_error", code: "provider_error", requestId: "req_safe-123" },
+      mayHaveBeenBilled: true, automaticRetry: false });
+    expect(test.errors.join("\n")).not.toMatch(/sensitive prompt|synthetic-credential|message/);
+  });
   it("reports uncertain aborted outcomes without retrying or printing exception diagnostics", async () => {
     const test = setup({ completion: async () => { throw new DOMException("sensitive input and credential", "TimeoutError"); } });
     expect(await test.run()).toBe(1); expect(test.requests).toHaveLength(2);
