@@ -1,112 +1,78 @@
-# Tool City
+# BriefMint · Tool City
 
-A small city of AI workshops where creators can purchase a private translation, review it beside the source, and reopen the saved result later.
+BriefMint helps a community lead turn private project notes into a structured writing or design brief. The owner reviews and edits the result, approves exactly what may become public, and can publish an owner-controlled opportunity on Arkiv for others to discover.
 
-Built for **ETHGlobal Mumbai 2026** by a two-person team.
+Built for ETHGlobal Mumbai 2026. The city interface uses the existing Tool City visuals; BriefMint does not require payment, escrow, a funded bounty, or Whitechain checkout. The earlier translation and checkout code remains in the repository as a separate legacy product.
 
 ## Status
 
-Backend foundation in development on `codex/payment-backend`. Local contract/server checks and the production build pass. Live sponsor integrations and the teammate's city/Arkiv UI are not complete; this is not a working paid translation demo yet.
+The backend, shared API contract, Vite city integration, and Arkiv adapters are implemented and tested locally. The latest recorded verification passed 126 server tests, five simulated-chain contract tests, both production builds, and a local HTTP proxy/restart smoke. The tests use explicitly labelled synthetic provider and chain fixtures; they are not live sponsor evidence.
 
-The current browser page and checkout example are explicitly disabled bootstrap shells. The backend fails closed until a real deployment and Arkiv reader are integrated.
+The project is **not yet validated end to end**. The remaining gates are:
 
-## The idea
+- A successful authorized 0G private inference. The previous operator-run request returned HTTP 502, with billing uncertain. Independent provider-signature/content verification is not implemented.
+- Agent B's browser work: account/session race guards, fresh approval/prepare and exclusive arming before signing, durable pending identifiers, and discovery controls. A real wallet journey remains untested.
+- Owner-signed Arkiv create/query/update/close/expiry and an independent live read, plus production HTTPS and persistent-storage verification.
 
-Creators who occasionally translate short unpublished announcements should be able to buy one task, correct its output, and recover the result without a subscription or a second purchase.
+See the [acceptance matrix and verification record](docs/briefmint/backend-checkpoint.md) for precise status and limitations. Do not treat a local build, mock result, prepared intent, or transaction hash alone as proof of a live integration.
 
-Our first workshop will translate short English drafts into Hindi. An isometric city will make discovery, payment, processing, and recovery visible through clickable buildings and a document-carrying worker.
+## How it works
 
-## Planned workflow
+1. Sign in with a wallet and save private notes with separate public parameters.
+2. Deliberately request a structured brief through 0G's private-routing policy. Compilation is controlled by an operator-configured quota, not a purchase.
+3. Review and edit the saved draft. The server keeps the original result separate and binds approval to a revision and canonical public-payload hash.
+4. Prepare an approved public intent. The owner's browser wallet signs an Arkiv write; the server independently checks the receipt and entity before recording publication.
+5. Discover public opportunities by indexed fields or use the standalone reader. Reopen and export the private brief through the owner session.
 
-1. Discover a merchant-owned workshop on Arkiv.
-2. Connect a wallet and submit a short draft.
-3. Purchase the job with official test USDT on Whitechain.
-4. Verify the purchase on the server before private inference through 0G.
-5. Review and edit corresponding source/translation segments, then export TXT or JSON.
-6. Reopen the existing paid job without buying it again.
+Private routing does not hide notes from the BriefMint backend. Only reviewed public fields are eligible for publication, but schema validation cannot detect a private fact that a person chooses to approve. Public copies may persist after an opportunity closes or expires.
 
-## Stack
+## Local development
 
-- **Interface:** Next.js, React, SVG and CSS animations.
-- **Discovery:** wallet-owned workshop records on Arkiv.
-- **Payments:** a fixed-price checkout contract on Whitechain Sepolia.
-- **AI:** private inference through 0G Private Computer.
-- **Recovery:** authenticated job access and a private SQLite store on persistent hosting.
+Requires Node.js 24 and npm. Install the root and Vite dependencies from their lockfiles:
 
-Private inference does not hide the draft from our application backend. Model quality, availability and end-to-end recovery still need to be tested.
-
-## Team workflow
-
-One builder owns contracts, backend, payment verification and 0G. The other owns the city, frontend and Arkiv. Both work from a shared structure and API contract.
-
-## Development
-
-Requires **Node.js 24** and npm. From the repository root:
-
-```bash
+```sh
 npm ci
-cp .env.example .env.local
+npm --prefix apps/web ci
 ```
 
-Configure a local `SESSION_SECRET` before using authenticated APIs; follow [live setup from zero](docs/SETUP-LIVE-INTEGRATIONS.md) for wallet funding and 0G access. Do not commit credentials. Then:
+For a local, no-inference setup with a disposable database and the correct same-origin proxy/cookie configuration, follow the [local integration runbook](docs/briefmint/local-integration.md). In brief, the Next API listens on `127.0.0.1:4100`, the Vite city on `127.0.0.1:5173`, and the browser uses relative `/api` routes through the Vite proxy. Do not mix `localhost` and `127.0.0.1`. The runbook explains the required session secret and how to leave 0G quota and Arkiv unavailable during local checks; do not commit real environment values.
 
-```bash
-npm run dev
-```
+Useful commands:
 
-Validation commands:
-
-```bash
-npm run contracts:compile
-npm run test:contracts
+```sh
+npm run dev -- --hostname 127.0.0.1 --port 4100
+npm run reference:dev -- --host 127.0.0.1 --port 5173
 npm run test:server
 npm run lint
 npm run typecheck
 npm run build
+npm run reference:typecheck
+npm run reference:build
 npm run smoke:local
 ```
 
-`npm run contracts:compile` exports the ABI from the actual compiled contract. First compilation may download the official Solidity compiler. `npm run build` packages the independent checkout example and prepares Next standalone public/static assets; `npm start` runs that build. Production requires HTTPS configuration and a persistent `DATABASE_PATH` on one Node instance.
+Run the two development servers in separate terminals after configuring the local environment. `npm run smoke:local` requires the root production build first; it uses loopback servers, a disposable database and test signer, and disables external provider/Arkiv configuration. Legacy contract tests are available with `npm run test:contracts` and run against a simulated chain.
 
-## Implemented backend foundation
+The read-only Arkiv client is independent of the application API, SQLite, login and wallet:
 
-- Nonce-bound wallet authentication, sessions and origin checks.
-- Durable SQLite jobs, immutable source/accepted terms, separate saved edits and buyer-only recovery.
-- Fixed-service checkout contract, generated ABI and adversarial local tests.
-- Server receipt, token-settlement and purchase-state verification.
-- Private 0G request adapter, bounded responses, durable execution leases and two-attempt limit.
-- Merchant-only settlement JSON/CSV without buyer text.
-
-Local tests use explicit doubles and test tokens; they do not establish official-token settlement, model availability, translation quality or sponsor eligibility. The confirmed-purchase cache does not implement later chain-reorg rollback; wallet authentication currently covers EOA signatures. The backend sees the draft. These limitations and remaining gates are recorded in the handoff.
-
-## Tool City reference UI (`apps/web`)
-
-`apps/web/` is a self-contained React/Vite front end themed as Tool City. It
-renders the five-site translation district, the workshop departures board, and
-a local English → Hindi job demo (Arkiv listing → Whitechain test-USDT
-checkout → private run → Archive review/export). It makes no network calls and
-keeps all job state in the browser; amounts are labelled test USDT and the
-sample draft is demo data.
-
-Run it with:
-
-```bash
-npm --prefix apps/web install
-npm run reference:dev
+```sh
+node --import tsx scripts/briefmint-arkiv-reader.ts --help
 ```
 
-It serves at `http://127.0.0.1:5173`. The copied Vite config still proxies
-`/api`, `/auth`, `/health`, and the reference WebSocket to port 4100, but the
-Tool City demo does not use that backend.
+Its query options and the separately authorized live procedure are documented in the [Arkiv probe](docs/briefmint/ARKIV_LIVE_PROBE.md). No real record has yet been independently discovered by this project.
 
-## Agent plan and handoff
+## Architecture and handoff
 
-- [Staged backend plan and model/reasoning assignments](docs/san-backend-payments.md)
-- [Common structure/API contract](docs/briefs/TOOL-CITY-COMMON-STRUCTURE.md)
-- [Teammate's frontend/Arkiv assignment](docs/briefs/TOOL-CITY-TEAMMATE-FRONTEND-STRUCTURE.md)
-- [Actual checks and pending live gates](docs/backend-handoff.md)
-- [Integration checklist](docs/integration-checklist.md)
+- **Browser:** React/Vite city in `apps/web`; the browser wallet owns and signs public Arkiv writes.
+- **Backend:** Node/Next API, session-derived ownership, revisioned briefs, quota/lease execution, approval and independent publication reconciliation.
+- **Private computation:** 0G private-only routing with fallbacks disabled; Router-reported verification and independent verification are distinct.
+- **Public data:** Arkiv indexed opportunity entities with owner and expiry from network system fields. The canonical public DTO is in `src/lib/shared/briefs.ts`.
+- **Storage:** private SQLite on a persistent volume, with one Node process. Production HTTPS, proxy routing, backups and restart recovery still require actual hosting evidence.
 
-No main promotion until the full readiness checklist passes, including real Arkiv publication, verified Whitechain deployment/official-token purchase, useful private 0G output and complete UI/recovery integration. Deployment addresses and evidence will be added only after actual operations.
+The [Agent B frontend handoff](docs/briefmint/AGENT_B_FRONTEND_HANDOFF.md) defines the current API and outstanding browser tasks. The [integration contract](docs/briefmint/integration-contract.md) documents the shared boundaries.
 
-Codex assists planning and implementation. This foundation used a GPT-6.1 Sol technical coordinator (high reasoning), GPT-6.1 Terra for contract implementation/testing (high), and GPT-6 Luna for bounded handoff/checklist documentation (medium), with integration and review by the main agent. The teammate's frontend work is separate; no finished city implementation is claimed here.
+## Live validation and submission
+
+Live inference can consume credits, and wallet writes can incur network costs. They require separate human authorization. Follow the [0G live probe](docs/briefmint/0G_LIVE_PROBE.md), [Arkiv live probe](docs/briefmint/ARKIV_LIVE_PROBE.md), and [live validation and submission checklist](docs/briefmint/LIVE_VALIDATION_AND_SUBMISSION.md). [Demo notes](docs/briefmint/DEMO_NOTES.md) provide synthetic input and evidence-safe claims.
+
+The Tool City reference UI came from the recorded `cb0db61` source snapshot and was adapted for BriefMint. AI assistance was used in planning, implementation and testing. A complete third-party asset and dependency license review remains outstanding; do not claim all assets are original until that review is complete.
