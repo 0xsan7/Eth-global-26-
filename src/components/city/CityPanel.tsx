@@ -1,38 +1,44 @@
 "use client";
-// CityPanel: detail panel for the selected building.
-// Registry → workshop/owner/freshness; Home → draft or review summary;
-// Treasury → fixed terms + receipt + checkout; Studio → run/retry + evidence;
-// Archive → My Jobs and saved-result access.
+// CityPanel: detail panel for the selected building — BriefMint workflow.
+// Registry → indexed opportunities + owner publication; Home → private intake;
+// Release Desk (treasury id) → exact preview + approval; Studio → compilation;
+// Archive → persisted briefs. Geometry and styling unchanged.
 import Link from "next/link";
-import ToolCityPay from "@/components/checkout/ToolCityPay";
-import DraftForm from "@/components/jobs/DraftForm";
-import JobEvidence from "@/components/jobs/JobEvidence";
-import { StatusBadge } from "@/components/jobs/JobList";
-import WorkshopCard from "@/components/workshop/WorkshopCard";
-import type { JobView, PublicConfig, WorkshopView } from "@/lib/shared/domain";
+import BriefEvidence from "@/components/briefs/BriefEvidence";
+import BriefIntakeForm from "@/components/briefs/BriefIntakeForm";
+import BriefList from "@/components/briefs/BriefList";
+import OpportunityBoard from "@/components/briefs/OpportunityBoard";
+import OpportunityPublisher from "@/components/briefs/OpportunityPublisher";
+import OpportunityReader from "@/components/briefs/OpportunityReader";
+import ReleaseDesk from "@/components/briefs/ReleaseDesk";
+import type { BriefMintConfig, OpportunityView, PrivateBrief } from "@/lib/shared/briefmint";
 import type { BuildingId } from "./scene-config";
 import { BUILDING_BY_ID } from "./scene-config";
 
 interface CityPanelProps {
   building: BuildingId;
-  config: PublicConfig | null;
-  workshops: WorkshopView[];
-  workshopLoading: boolean;
-  workshopError: string | null;
+  briefConfig: BriefMintConfig | null;
+  briefConfigError: string | null;
+  brief: PrivateBrief | null;
+  briefs: Array<{ id: string; title: string; category: string }>;
+  briefsLoading: boolean;
+  opportunities: OpportunityView[];
+  opportunitiesLoading: boolean;
+  opportunitiesError: string | null;
+  opportunitiesStale: boolean;
   lastRefresh: string | null;
-  onRefreshWorkshops: () => void;
-  selectedWorkshop: WorkshopView | null;
-  onSelectWorkshop: (w: WorkshopView) => void;
-  job: JobView | null;
-  onJobCreated: (job: JobView) => void;
-  onJobChange: (job: JobView) => void;
-  onRunJob: () => void;
+  onRefreshOpportunities: () => void;
+  selectedOpportunity: OpportunityView | null;
+  onSelectOpportunity: (o: OpportunityView) => void;
+  onBriefCreated: (b: PrivateBrief) => void;
+  onBriefChange: (b: PrivateBrief) => void;
+  onRunBrief: () => void;
   runBusy: boolean;
   runError: string | null;
 }
 
 export default function CityPanel(props: CityPanelProps) {
-  const { building, job } = props;
+  const { building } = props;
   const def = BUILDING_BY_ID[building];
   return (
     <section className="card city-panel" aria-label={`${def.name} panel`}>
@@ -40,9 +46,9 @@ export default function CityPanel(props: CityPanelProps) {
       <p className="tc-muted">{def.description}</p>
       {building === "registry" && <RegistryBody {...props} />}
       {building === "home" && <HomeBody {...props} />}
-      {building === "treasury" && <TreasuryBody {...props} />}
+      {building === "treasury" && <ReleaseBody {...props} />}
       {building === "studio" && <StudioBody {...props} />}
-      {building === "archive" && <ArchiveBody job={job} />}
+      {building === "archive" && <ArchiveBody {...props} />}
     </section>
   );
 }
@@ -50,124 +56,96 @@ export default function CityPanel(props: CityPanelProps) {
 function RegistryBody(p: CityPanelProps) {
   return (
     <div>
-      <div className="btn-row">
-        <button type="button" className="btn" onClick={p.onRefreshWorkshops} disabled={p.workshopLoading}>
-          {p.workshopLoading ? "Refreshing…" : "Refresh listing"}
-        </button>
-      </div>
-      {p.lastRefresh && <p className="tc-muted">Last successful refresh: {new Date(p.lastRefresh).toLocaleString()}</p>}
-      {p.workshopLoading && <p className="tc-muted">Loading workshops from Arkiv…</p>}
-      {p.workshopError && !p.workshopLoading && <p className="error" role="alert">{p.workshopError}</p>}
-      {!p.workshopLoading && !p.workshopError && p.workshops.length === 0 && (
-        <p className="tc-muted">Catalogue is empty — no workshop is currently listed.</p>
-      )}
-      {p.workshops.map((w) => (
-        <WorkshopCard
-          key={w.entityKey}
-          workshop={w}
-          selected={p.selectedWorkshop?.entityKey === w.entityKey}
-          onSelect={() => p.onSelectWorkshop(w)}
-        />
-      ))}
-      {p.selectedWorkshop && (
-        <p className="notice">Selected workshop: {p.selectedWorkshop.title} — draft at the Creator&apos;s Home.</p>
-      )}
+      <OpportunityBoard
+        opportunities={p.opportunities}
+        loading={p.opportunitiesLoading}
+        error={p.opportunitiesError}
+        lastRefresh={p.lastRefresh}
+        stale={p.opportunitiesStale}
+        onRefresh={p.onRefreshOpportunities}
+        selected={p.selectedOpportunity}
+        onSelect={p.onSelectOpportunity}
+      />
+      <OpportunityPublisher brief={p.brief} onSaved={p.onBriefChange} rpcLabel="Rabdi 7794095" />
+      <OpportunityReader />
     </div>
   );
 }
 
 function HomeBody(p: CityPanelProps) {
-  if (!p.job) {
-    return (
-      <DraftForm
-        workshopEntityKey={p.selectedWorkshop && p.selectedWorkshop.supported ? p.selectedWorkshop.entityKey : null}
-        onCreated={p.onJobCreated}
-      />
-    );
+  if (!p.brief) {
+    return <BriefIntakeForm onCreated={p.onBriefCreated} />;
   }
   return (
     <div>
       <p>
-        <StatusBadge status={p.job.status} /> <span className="tc-mono">{p.job.id.slice(0, 18)}…</span>
+        <span className="badge badge-info">{p.brief.executionStatus}</span>{" "}
+        <span className="tc-mono">{p.brief.id.slice(0, 18)}…</span>
       </p>
-      {p.job.status === "ready" ? (
-        <p className="notice">Parcel delivered — review and export it on the job page.</p>
-      ) : (
-        <p className="tc-muted">Draft accepted and immutable. Follow the worker to continue.</p>
-      )}
-      <Link className="btn btn-primary" href={`/jobs/${p.job.id}`}>Open job</Link>
+      <p className="tc-muted">
+        {p.brief.publicParameters.title} — r{p.brief.draftRevision} · {p.brief.reviewStatus}
+      </p>
+      <Link className="btn btn-primary" href={`/briefs/${p.brief.id}`}>Open brief</Link>
     </div>
   );
 }
 
-function TreasuryBody(p: CityPanelProps) {
-  const terms = p.job?.terms ?? p.config?.terms;
+function ReleaseBody(p: CityPanelProps) {
   return (
     <div>
-      <h3>Fixed checkout terms</h3>
-      {terms ? (
-        <dl>
-          <div><dt>Chain</dt><dd>{terms.chainId}</dd></div>
-          <div><dt>Checkout contract</dt><dd className="tc-mono">{terms.checkoutAddress}</dd></div>
-          <div><dt>Token</dt><dd className="tc-mono">{terms.tokenAddress} ({terms.tokenDecimals} decimals)</dd></div>
-          <div><dt>Amount (atomic)</dt><dd>{terms.amountAtomic}</dd></div>
-          <div><dt>Merchant</dt><dd className="tc-mono">{terms.merchantAddress}</dd></div>
-          <div><dt>Service ID</dt><dd className="tc-mono">{terms.serviceId}</dd></div>
-          <div><dt>Terms hash</dt><dd className="tc-mono">{terms.termsHash}</dd></div>
-        </dl>
-      ) : (
-        <p className="tc-muted">Checkout not configured — purchasing is disabled until contract reads reconcile.</p>
+      <ReleaseDesk brief={p.brief} onSaved={p.onBriefChange} />
+      {p.brief && (
+        <p className="tc-muted">
+          <Link href={`/briefs/${p.brief.id}`}>Full brief detail →</Link>
+        </p>
       )}
-      {p.config?.serviceTermsText && (
-        <details>
-          <summary>Service terms text</summary>
-          <p style={{ whiteSpace: "pre-wrap" }}>{p.config.serviceTermsText}</p>
-        </details>
-      )}
-      <h3>Receipt</h3>
-      {p.job?.payment ? (
-        <dl>
-          <div><dt>Transaction</dt><dd className="tc-mono">{p.job.payment.txHash}</dd></div>
-          <div><dt>Status</dt><dd>{p.job.payment.status}</dd></div>
-          <div><dt>Verified at</dt><dd>{p.job.payment.verifiedAt ?? "pending"}</dd></div>
-        </dl>
-      ) : (
-        <p className="tc-muted">{p.job ? "No payment submitted yet." : "Create a draft at the Creator's Home first."}</p>
-      )}
-      {p.job && <ToolCityPay job={p.job} onJobChange={p.onJobChange} />}
     </div>
   );
 }
 
 function StudioBody(p: CityPanelProps) {
-  const { job } = p;
-  if (!job) return <p className="tc-muted">No job yet — the Studio works on paid jobs only.</p>;
-  const canStart = job.status === "paid";
+  const { brief } = p;
+  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Creator&apos;s Home first.</p>;
+  const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
   return (
     <div>
-      <p><StatusBadge status={job.status} /> attempts used: {job.attemptsUsed}</p>
-      {job.error && <p className="error" role="alert">{job.error.code}: {job.error.message}</p>}
+      <p>
+        <span className="badge badge-info">{brief.executionStatus}</span> attempts used: {brief.attemptsUsed}
+        {brief.retryEligible ? " · retry eligible" : ""}
+      </p>
+      <p className="tc-muted">
+        Compilation is funded by promotional credits — no purchase, no bounty payout. Polls the saved record while
+        running; reopening never redispatches.
+      </p>
+      {brief.error && <p className="error" role="alert">{brief.error.code}: {brief.error.message}</p>}
       {p.runError && <p className="error" role="alert">{p.runError}</p>}
-      {(canStart || job.retryEligible) && (
-        <button type="button" className="btn btn-primary" disabled={p.runBusy} onClick={p.onRunJob}>
-          {p.runBusy ? "Working…" : canStart ? "Start translation" : "Retry translation"}
+      {canStart && (
+        <button type="button" className="btn btn-primary" disabled={p.runBusy} onClick={p.onRunBrief}>
+          {p.runBusy ? "Working…" : brief.executionStatus === "draft" ? "Start compilation" : "Retry compilation"}
         </button>
       )}
-      <Link className="btn" href={`/jobs/${job.id}`}>Open full review</Link>
-      <JobEvidence job={job} />
+      <Link className="btn" href={`/briefs/${brief.id}`}>Open full review</Link>
+      <BriefEvidence brief={brief} />
     </div>
   );
 }
 
-function ArchiveBody({ job }: { job: JobView | null }) {
+function ArchiveBody(p: CityPanelProps) {
   return (
     <div>
-      <p className="tc-muted">Saved results live under your authenticated job records.</p>
+      <p className="tc-muted">Owner-authenticated private briefs. Reopening loads saved content — never recompiles.</p>
       <div className="btn-row">
-        <Link className="btn btn-primary" href="/jobs">My Jobs</Link>
-        {job && <Link className="btn" href={`/jobs/${job.id}`}>Current job</Link>}
-        <Link className="btn" href="/merchant">Merchant console</Link>
+        <Link className="btn btn-primary" href="/briefs">My Briefs</Link>
+        {p.brief && <Link className="btn" href={`/briefs/${p.brief.id}`}>Current brief</Link>}
+        <Link className="btn" href="/opportunities">Public opportunities</Link>
       </div>
+      {p.briefsLoading ? (
+        <p className="tc-muted">Loading briefs…</p>
+      ) : (
+        <BriefList
+          briefs={p.briefs as unknown as Parameters<typeof BriefList>[0]["briefs"]}
+        />
+      )}
     </div>
   );
 }

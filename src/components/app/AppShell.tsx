@@ -16,12 +16,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <Link href="/" style={{ fontWeight: 700, textDecoration: "none" }}>
-          Tool City
+          BriefMint
         </Link>
         <nav aria-label="Primary" style={{ display: "flex", gap: "0.75rem" }}>
           <Link href="/">City</Link>
-          <Link href="/jobs">My Jobs</Link>
-          <Link href="/merchant">Merchant</Link>
+          <Link href="/briefs">My Briefs</Link>
+          <Link href="/opportunities">Opportunities</Link>
+          <Link href="/jobs">Jobs (legacy)</Link>
+          <Link href="/merchant">Merchant (legacy)</Link>
         </nav>
         <div style={{ marginLeft: "auto" }}>
           <WalletControls />

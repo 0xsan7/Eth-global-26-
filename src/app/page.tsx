@@ -1,153 +1,186 @@
 "use client";
-// Home: real workshop discovery (Arkiv read after /api/config), the city,
-// and the selected-building panel. Loading / failed / empty catalogue states
-// stay distinct; a failed refresh never proves withdrawal or expiry.
+// Home: BriefMint city — real opportunity discovery (independent Arkiv reads
+// with backend list when available) plus the city and selected-building panel.
+// Loading / failed / empty states stay distinct; a failed refresh never proves
+// withdrawal, expiry, or deletion.
 import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/app/AppShell";
 import CityPanel from "@/components/city/CityPanel";
 import CityScene from "@/components/city/CityScene";
-import { jobStateToScene } from "@/components/city/job-state-to-scene";
+import { briefStateToScene } from "@/components/city/brief-state-to-scene";
 import type { BuildingId } from "@/components/city/scene-config";
-import WorkshopCard from "@/components/workshop/WorkshopCard";
-import { listWorkshops } from "@/lib/arkiv/read";
-import { api, isApiError } from "@/lib/client/api-client";
+import { readOpportunitiesIndependent, RABDI_PUBLIC_RPC } from "@/lib/arkiv/opportunities-independent";
+import { briefmintApi, isApiError } from "@/lib/client/briefmint-api";
+import { useBriefs } from "@/lib/client/use-briefs";
 import { useSession } from "@/lib/client/use-session";
-import type { JobView, PublicConfig, WorkshopView } from "@/lib/shared/domain";
-import { DEV_FIXTURE_WORKSHOP, devFixturesEnabled } from "@/lib/shared/fixtures";
+import type { BriefMintConfig, OpportunityView, PrivateBrief } from "@/lib/shared/briefmint";
 
-const ACTIVE_POLL = new Set(["payment_pending", "paid", "running"]);
+const ACTIVE_BRIEF_POLL = new Set(["running", "pending"]);
 
 export default function HomePage() {
   const sessionQ = useSession();
   const address = sessionQ.address;
-  const [config, setConfig] = useState<PublicConfig | null>(null);
-  const [configError, setConfigError] = useState<string | null>(null);
-  const [workshops, setWorkshops] = useState<WorkshopView[]>([]);
-  const [workshopLoading, setWorkshopLoading] = useState(true);
-  const [workshopError, setWorkshopError] = useState<string | null>(null);
+  const [briefConfig, setBriefConfig] = useState<BriefMintConfig | null>(null);
+  const [briefConfigError, setBriefConfigError] = useState<string | null>(null);
+  const [opportunities, setOpportunities] = useState<OpportunityView[]>([]);
+  const [oppLoading, setOppLoading] = useState(true);
+  const [oppError, setOppError] = useState<string | null>(null);
+  const [oppStale, setOppStale] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [building, setBuilding] = useState<BuildingId>("registry");
-  const [job, setJob] = useState<JobView | null>(null);
+  const [building, setBuilding] = useState<BuildingId>("home");
+  const [brief, setBrief] = useState<PrivateBrief | null>(null);
+  const briefsQ = useBriefs(!!address);
+  const briefSummaries = (briefsQ.data?.briefs ?? []).map((b) => ({ id: b.id, title: b.title, category: b.category }));
+  const briefsLoading = briefsQ.isLoading;
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
-  const loadWorkshops = useCallback(async (cfg: PublicConfig) => {
-    setWorkshopLoading(true);
-    setWorkshopError(null);
+  const loadOpportunities = useCallback(async (rpcUrl: string) => {
+    setOppLoading(true);
+    setOppError(null);
+    // Prefer the backend list when it is deployed; always fall back to the
+    // independent reader so public discovery works without the private API.
     try {
-      const list = await listWorkshops(cfg);
-      setWorkshops(list);
+      const res = await briefmintApi.listOpportunities();
+      setOpportunities(res.opportunities);
+      setOppStale(false);
       setLastRefresh(new Date().toISOString());
-      setSelectedKey((prev) => prev ?? list.find((w) => w.supported && w.active)?.entityKey ?? list[0]?.entityKey ?? null);
+      setSelectedKey((prev) => prev ?? res.opportunities.find((o) => o.status === "open")?.entityKey ?? res.opportunities[0]?.entityKey ?? null);
+      return;
     } catch {
-      // Failed refresh does not prove withdrawal or expiry — keep old list.
-      setWorkshopError("Arkiv query failed. The catalogue could not be refreshed; this does not mean listings were withdrawn.");
-    } finally {
-      setWorkshopLoading(false);
+      // Backend unavailable — independent read below.
     }
+    try {
+      const list = await readOpportunitiesIndependent({ rpcUrl }, { status: "all" });
+      setOpportunities((prev) => {
+        if (prev.length > 0) setOppStale(true);
+        return list;
+      });
+      setLastRefresh(new Date().toISOString());
+      setSelectedKey((prev) => prev ?? list.find((o) => o.status === "open")?.entityKey ?? list[0]?.entityKey ?? null);
+    } catch {
+      if (opportunities.length > 0) {
+        setOppStale(true);
+        setOppError("Arkiv query failed — showing last confirmed list (stale). This does not mean records were withdrawn.");
+      } else {
+        setOppError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn or expired.");
+      }
+    } finally {
+      setOppLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let rpc = RABDI_PUBLIC_RPC;
       try {
-        const cfg = await api.config();
+        const cfg = await briefmintApi.config();
         if (cancelled) return;
-        setConfig(cfg);
-        await loadWorkshops(cfg);
+        setBriefConfig(cfg);
+        if (cfg.arkiv.rpcUrl) rpc = cfg.arkiv.rpcUrl;
       } catch (e) {
         if (cancelled) return;
-        setConfigError(isApiError(e) ? `${e.code}: ${e.message}` : "Config unavailable.");
-        setWorkshopLoading(false);
+        setBriefConfigError(
+          isApiError(e) && (e.status === 503 || e.code === "SERVICE_UNAVAILABLE")
+            ? "BriefMint backend unavailable (503) — public discovery continues via the independent Arkiv reader."
+            : "BriefMint config unavailable.",
+        );
       }
+      await loadOpportunities(rpc);
     })();
-    return () => { cancelled = true; };
-  }, [loadWorkshops]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadOpportunities]);
 
   // Refresh discovery when the window regains focus.
   useEffect(() => {
-    const onFocus = () => { if (config) void loadWorkshops(config); };
+    const onFocus = () => {
+      void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC);
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [config, loadWorkshops]);
+  }, [briefConfig, loadOpportunities]);
 
-  // Account change clears the prior buyer's private job UI state
+  // Account change clears the prior owner's private brief UI state
   // (query caches are cleared by useSessionAccountSync in the provider).
   const prevAddress = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (prevAddress.current !== undefined && prevAddress.current !== address) setJob(null);
+    if (prevAddress.current !== undefined && prevAddress.current !== address) {
+      setBrief(null);
+    }
     prevAddress.current = address;
   }, [address]);
 
-  // Poll the active job ~2s; reopening a finished job just loads saved state.
+  // Poll the active brief ~2s; reopening a saved brief just loads state.
   useEffect(() => {
-    if (!job || !ACTIVE_POLL.has(job.status)) return;
+    if (!brief || (!ACTIVE_BRIEF_POLL.has(brief.executionStatus) && brief.publication.lastObservedStatus !== "pending")) return;
     const t = setInterval(async () => {
       try {
-        setJob(await api.getJob(job.id));
-      } catch { /* keep last known state */ }
+        setBrief(await briefmintApi.getBrief(brief.id));
+      } catch {
+        /* keep last known state */
+      }
     }, 2000);
     return () => clearInterval(t);
-  }, [job]);
+  }, [brief]);
 
   const handleRun = async () => {
-    if (!job) return;
+    if (!brief) return;
     setRunBusy(true);
     setRunError(null);
     try {
-      const result = await api.runJob(job.id);
-      setJob(result.job);
+      const result = await briefmintApi.runBrief(brief.id);
+      setBrief(result.brief);
     } catch (e) {
-      setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start the run. Retry.");
+      setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
     } finally {
       setRunBusy(false);
     }
   };
 
-  const selectedWorkshop = workshops.find((w) => w.entityKey === selectedKey) ?? null;
-  const scene = jobStateToScene(job);
-  const showFixture = devFixturesEnabled() && !workshopLoading && (workshopError !== null || workshops.length === 0);
+  const selectedOpportunity = opportunities.find((o) => o.entityKey === selectedKey) ?? null;
+  const scene = briefStateToScene(brief);
 
   return (
     <AppShell>
       <div className="tc-page">
-        <h1>Tool City — private translation workshop</h1>
+        <h1>BriefMint — private notes to public opportunity</h1>
         <p className="tc-muted">
-          Discover the merchant-owned workshop, draft English text, purchase the job, and review the Hindi
-          translation. One merchant, one fixed test-USDT price.
+          Turn rough project notes into a reviewed brief and publish only the approved public fields as a
+          wallet-owned Arkiv opportunity. Compilation is quota-funded — no purchase, no bounty payout.
         </p>
-        {configError && <p className="error" role="alert">{configError}</p>}
-        {config && !config.configured && (
-          <p className="notice">Checkout is not configured yet — purchasing stays disabled until contract reads reconcile.</p>
+        {briefConfigError && <p className="notice" role="status">{briefConfigError}</p>}
+        {briefConfig && !briefConfig.ready && (
+          <p className="notice">BriefMint services are not fully ready — intake, compilation, or Arkiv may be unavailable. States below stay honest.</p>
         )}
         <div className="city-layout">
-          <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={job?.status ?? null} />
+          <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={brief?.executionStatus ?? null} />
           <CityPanel
             building={building}
-            config={config}
-            workshops={workshops}
-            workshopLoading={workshopLoading}
-            workshopError={workshopError}
+            briefConfig={briefConfig}
+            briefConfigError={briefConfigError}
+            brief={brief}
+            briefs={briefSummaries}
+            briefsLoading={briefsLoading}
+            opportunities={opportunities}
+            opportunitiesLoading={oppLoading}
+            opportunitiesError={oppError}
+            opportunitiesStale={oppStale}
             lastRefresh={lastRefresh}
-            onRefreshWorkshops={() => { if (config) void loadWorkshops(config); }}
-            selectedWorkshop={selectedWorkshop}
-            onSelectWorkshop={(w) => setSelectedKey(w.entityKey)}
-            job={job}
-            onJobCreated={(j) => { setJob(j); setBuilding("treasury"); }}
-            onJobChange={setJob}
-            onRunJob={handleRun}
+            onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
+            selectedOpportunity={selectedOpportunity}
+            onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
+            onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}
+            onBriefChange={setBrief}
+            onRunBrief={handleRun}
             runBusy={runBusy}
             runError={runError}
           />
         </div>
-        {showFixture && (
-          <div className="card">
-            <h2>Development fixture (not live)</h2>
-            <p className="tc-muted">Shown only because NEXT_PUBLIC_ENABLE_DEV_FIXTURES is set. Never a live listing.</p>
-            <WorkshopCard workshop={DEV_FIXTURE_WORKSHOP} />
-          </div>
-        )}
       </div>
     </AppShell>
   );

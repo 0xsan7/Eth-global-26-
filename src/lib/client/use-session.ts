@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
 import { api, isApiError, queryKeys } from "./api-client";
+import { briefmintQueryKeys } from "./use-briefs";
 import type { SessionResponse } from "../shared/api";
 
 export function useSession() {
@@ -47,6 +48,7 @@ export function useLogin() {
     onSuccess: (data) => {
       queryClient.setQueryData([...queryKeys.session], data);
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      void queryClient.invalidateQueries({ queryKey: briefmintQueryKeys.briefs });
     },
   });
 }
@@ -67,6 +69,8 @@ export function useLogout() {
       queryClient.removeQueries({ queryKey: queryKeys.jobs });
       queryClient.removeQueries({ queryKey: ["job"] });
       queryClient.removeQueries({ queryKey: queryKeys.purchases });
+      queryClient.removeQueries({ queryKey: briefmintQueryKeys.briefs });
+      queryClient.removeQueries({ queryKey: ["briefmint-brief"] });
     },
   });
 }
@@ -76,6 +80,8 @@ function clearPrivateCaches(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.removeQueries({ queryKey: queryKeys.jobs });
   queryClient.removeQueries({ queryKey: ["job"] });
   queryClient.removeQueries({ queryKey: queryKeys.purchases });
+  queryClient.removeQueries({ queryKey: briefmintQueryKeys.briefs });
+  queryClient.removeQueries({ queryKey: ["briefmint-brief"] });
 }
 
 /**

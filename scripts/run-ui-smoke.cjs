@@ -29,17 +29,21 @@ const tsconfig = {
   },
   include: [
     path.join(root, "tests/ui/smoke.test.ts"),
+    path.join(root, "tests/ui/briefmint.test.ts"),
     path.join(root, "src/lib/shared/validation.ts"),
     path.join(root, "src/lib/shared/fixtures.ts"),
     path.join(root, "src/lib/shared/domain.ts"),
+    path.join(root, "src/lib/shared/briefmint.ts"),
+    path.join(root, "src/lib/shared/briefmint-validation.ts"),
     path.join(root, "src/components/city/job-state-to-scene.ts"),
+    path.join(root, "src/components/city/brief-state-to-scene.ts"),
     path.join(root, "src/components/city/scene-config.ts"),
   ],
 };
 fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig));
 
 execSync(`node "${tsc}" -p "${tsconfigPath}"`, { cwd: root, stdio: "inherit" });
-execSync(`node --test "${path.join(out, "tests", "ui", "smoke.test.js")}"`, {
+execSync(`node --test "${path.join(out, "tests", "ui", "smoke.test.js")}" "${path.join(out, "tests", "ui", "briefmint.test.js")}"`, {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, NODE_PATH: path.join(root, "node_modules") },

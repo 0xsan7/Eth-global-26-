@@ -1,7 +1,8 @@
 "use client";
-// Wallet + session controls — Agent B owned. Connect, switch between Whitechain
-// (buyer checkout) and Rabdi (merchant listing writes), sign-in/out of the
-// cookie session, and wrong-network hints. No private keys are ever collected.
+// Wallet + session controls — Agent B owned. Connect the project-owner wallet,
+// switch between Rabdi (Arkiv publication) and Whitechain (legacy checkout),
+// sign in/out of the cookie session, and wrong-network hints. The wallet's
+// private key is never requested or handled — signing happens in the wallet.
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { useLogin, useLogout, useSession } from "@/lib/client/use-session";
 import {
@@ -22,9 +23,9 @@ function chainLabel(chainId: number | undefined): string {
 }
 
 export default function WalletControls({
-  expectedChainId = WHITECHAIN_ID,
+  expectedChainId = ARKIV_RABDI_ID,
 }: {
-  /** Network the surrounding screen expects; defaults to Whitechain (buyer). */
+  /** Network the surrounding screen expects; defaults to Rabdi (Arkiv publication). */
   expectedChainId?: number;
 }) {
   const { address, isConnected } = useAccount();
