@@ -51,3 +51,9 @@ Both use requested private routing, `verify_tee: true`, disabled fallbacks and n
 - Backend notes are access-controlled, not end-to-end encrypted. The app host and inference service process them.
 
 Use the [demo guide](../submission/DEMO_GUIDE.md) and [verification record](../submission/VERIFICATION.md). No eligibility, independent TEE proof or live lifecycle completion is claimed.
+
+## Operator UI captures — 7 November 2026 IST
+
+The operator subsequently supplied four unchanged screenshots, now in the [README gallery](../../README.md#inside-tool-city). The public Opportunities capture shows a successful refresh at **01:59:44 IST**, the matching demo entity, revision 1, open/fresh status and expiry block 587315. This is newer operator UI evidence than the earlier rate-limited documentation query; no additional network call was made to create the gallery. It does not establish present availability or a new transaction.
+
+The archive capture separately shows the published demo and unresolved original R3 intent. The independent-reader capture shows blank input controls, not an independent query result or proof that the API was stopped. The screenshot manifest and future draft/approval slots are documented in the [capture guide](../assets/screenshots/README.md).

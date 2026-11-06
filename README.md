@@ -1,156 +1,310 @@
-# BriefMint · Tool City
+<div align="center">
 
-**Turn private project notes into structured, owner-approved public opportunities.**
+<img src="docs/assets/briefmint-cover.svg" alt="BriefMint — Private ideas. Public opportunities. Workflow illustration." width="100%" />
 
-Built for ETHGlobal Mumbai, BriefMint combines a wallet-authenticated private workspace, 0G-assisted drafting, and owner-signed Arkiv publication inside an interactive isometric Tool City. The owner decides what crosses the boundary from private preparation to public discovery.
+# BriefMint
 
-**Demonstrated:** wallet sign-in → saved private notes → genuine 0G-generated draft → owner edits and exact approval → Arkiv create, receipt/readback and public discovery. [Live evidence and limitations](docs/evidence/LIVE_DEMO.md) distinguish observed results from offline tests.
+**Turn private project notes into clear, owner-approved public opportunities.**
 
-## Problem and solution
+A wallet-connected workspace for community leads: draft with **0G**, review every public field,<br />
+then publish a discoverable, wallet-owned opportunity on **Arkiv** — all inside **Tool City**.
 
-Project leads start with messy notes containing internal constraints and unfinished ideas. Turning them into a clear contributor opportunity takes work; publishing the original notes risks disclosure. BriefMint proposes deliverables, acceptance criteria, exclusions and clarification questions, then requires human review of a separate public projection before publication.
+[See the UI](#inside-tool-city) · [Explore the workflow](#the-workflow) · [See live evidence](#demonstrated-on-testnet) · [Run locally](#run-locally) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Demo guide](docs/submission/DEMO_GUIDE.md)
 
-## Core features
+**ETHGlobal Mumbai 2026** &nbsp; / &nbsp; **0G inference** &nbsp; / &nbsp; **Arkiv Rabdi**
 
-- Wallet authentication and owner-scoped private notes, source references, immutable original output, saved edits and restart recovery.
-- Structured 0G generation with bounded quotas, explicit dispatch, strict response validation, private routing requested and no fallback.
-- Revision-bound approval of deterministic canonical public JSON and its SHA-256 hash. Editing invalidates approval.
-- Browser-wallet Arkiv publication with immediate transaction-hash capture and backend receipt/entity verification.
-- Indexed public discovery and a standalone read-only client independent of BriefMint's API, cookies and SQLite.
-- Owner update/close, archival and private/public exports. **Update, close and native expiry have offline coverage; they have not been demonstrated live.**
+</div>
 
-## How it works
+---
 
-1. Connect the owner wallet and sign in; save project notes privately.
-2. Deliberately request a structured draft. Opening or refreshing an existing brief does not call AI again.
-3. Review the saved output, edit it and inspect the exact public preview.
-4. Approve a specific revision and canonical public-payload hash.
-5. Let the owner's browser wallet sign the prepared Arkiv operation. The backend checks receipt, signer, entity content, revision and expiry before recording publication.
-6. Discover the public opportunity through Arkiv's index or the independent reader.
+## Good opportunities start before the listing
+
+A community lead knows what needs doing. The brief is scattered across planning notes: unfinished ideas, internal constraints and requirements that still need clarification. Contributors need a clear scope — without receiving all that private context.
+
+BriefMint turns those notes into a structured proposal with deliverables, acceptance criteria, exclusions and open questions. The owner edits the proposal, reviews its public version and approves exactly what gets published.
+
+**The model drafts. The owner decides. The wallet publishes.**
+
+## Inside Tool City
+
+### A city that makes the workflow tangible
+
+Click a building to move between the Planning Desk, AI Studio, Release Desk, Registry Hall and Archive.
+
+<a href="docs/assets/screenshots/tool-city.png"><img src="docs/assets/screenshots/tool-city.png" alt="Actual BriefMint Tool City UI with Planning Desk, AI Studio, Release Desk, Registry Hall and Archive" width="100%" /></a>
+
+<table>
+<tr><th width="50%">Owner workspace</th><th width="50%">Public discovery</th></tr>
+<tr>
+<td><a href="docs/assets/screenshots/my-briefs.png"><img src="docs/assets/screenshots/my-briefs.png" alt="My Briefs archive showing the published demo and the preserved pending R3 brief" width="100%" /></a></td>
+<td><a href="docs/assets/screenshots/public-opportunities.png"><img src="docs/assets/screenshots/public-opportunities.png" alt="Public Opportunities displaying the owner, Arkiv entity, approved deliverables and acceptance criteria" width="100%" /></a></td>
+</tr>
+<tr><td>Reopen saved briefs without generating again. The published demo and unresolved original attempt retain separate identities.</td><td>Filter public records and inspect the approved scope, network owner, revision, status and native expiry.</td></tr>
+</table>
+
+<details>
+<summary><strong>Independent reader UI</strong></summary>
+
+<img src="docs/assets/screenshots/independent-reader.png" alt="Independent Arkiv reader form with empty access-key and entity-key inputs" width="100%" />
+
+The reader queries Arkiv directly. This capture shows the form, not a query result; independent read evidence is recorded [separately](docs/evidence/LIVE_DEMO.md).
+
+</details>
+
+<details>
+<summary><strong>Next visuals: draft review and exact public approval</strong></summary>
+
+<table>
+<tr><th width="50%">Generated draft + owner edits</th><th width="50%">Public preview + approval hash</th></tr>
+<tr>
+<td><img src="docs/assets/draft-review-placeholder.svg" alt="Placeholder for a real saved draft-review screenshot" width="100%" /></td>
+<td><img src="docs/assets/approval-preview-placeholder.svg" alt="Placeholder for a real public-payload approval screenshot" width="100%" /></td>
+</tr>
+</table>
+
+These two slots are explicitly placeholders. Add real captures as `docs/assets/screenshots/draft-review.png` and `docs/assets/screenshots/approval-preview.png`, then replace the two placeholder image paths above. [Screenshot replacement guide →](docs/assets/screenshots/README.md)
+
+</details>
+
+*Actual UI screenshots supplied by the operator on 7 November 2026; click to view full resolution. They show capture-time state. The visible legacy Whitechain header label does not imply BriefMint requires checkout or Whitechain funding.*
+
+## The workflow
+
+![BriefMint pipeline: private intake, 0G drafting, saved edits, exact approval, owner-signed publication and public discovery](docs/assets/briefmint-pipeline.svg)
+
+
+| Step | What the owner does | What BriefMint guarantees at that boundary |
+|---|---|---|
+| **01 · Prepare privately** | Sign in with a wallet and save project notes. | Owner-scoped access and persistent source material. |
+| **02 · Generate a draft** | Deliberately request 0G generation. | Bounded dispatch, strict output validation and no public fallback. |
+| **03 · Review and approve** | Edit the draft and inspect the public preview. | Approval binds an exact revision and canonical SHA-256 hash. Edits invalidate it. |
+| **04 · Publish and discover** | Sign the approved Arkiv operation in the browser wallet. | Confirmed receipt and matching entity readback before publication success. |
+
+Saved drafts can be reopened without another inference. Public opportunities can be read without a BriefMint login or access to its private database.
+
+<details>
+<summary><strong>A concrete example</strong></summary>
+
+**Synthetic project note:** “Our fictional DAO needs beginner onboarding documentation. Include a reproducible setup guide, a ten-question FAQ and a contribution checklist. Exclude contract development and infrastructure deployment.”
+
+**Structured draft:**
+
+- **Deliverables:** Markdown setup guide, FAQ and contribution checklist.
+- **Acceptance criteria:** beginner-friendly instructions and reproducible installation steps.
+- **Exclusions:** smart contract development and infrastructure deployment.
+- **Open questions:** target environment, DAO context and reviewer.
+
+The owner can change the wording before approving the public projection. This illustrates the workflow; the actual demonstrated record is linked below.
+
+</details>
+
+## Demonstrated on testnet
+
+**A real private-to-public journey has been demonstrated:** MetaMask authentication, saved private notes, genuine 0G generation, editable output, revision/hash approval, owner-signed Arkiv creation, receipt/readback and public discovery.
+
+| Evidence | Inspect it |
+|---|---|
+| **Published opportunity** | Developer onboarding document [demo 2a69f504] · revision 1 · writing · open at the recorded observation |
+| **Arkiv transaction** | [View on Rabdi Explorer ↗](https://rabdi.explorer.arkiv.network/tx/0x78ab3f744d123c56e985008cbf70c12a81fe1fb927f79b4220e67147b0a4c3ea) |
+| **App inference** | Model `0gm-1.0-35b-a3b`; saved request ID and returned metadata in the [evidence record](docs/evidence/LIVE_DEMO.md#0g-evidence-levels) |
+| **Independent read** | Standalone public reader returned the entity without app API, cookies or SQLite. |
+| **Offline verification checkpoint** | 176 server tests, 27 UI tests, typecheck, lint, production build and no-billing HTTP smoke passed. [Commands and results →](docs/submission/VERIFICATION.md) |
+
+**Verify the public entity yourself** — no wallet or application server required:
+
+```sh
+node --import tsx scripts/briefmint-arkiv-reader.ts \
+  --get 0x85ea1b83ec04c6f9ff795d75cfbd5f2d136cb69bb571c4ec6ec18dce648bb121 \
+  --public-endpoint
+```
+
+The anonymous endpoint is rate-limited; a later indexed query returned HTTP 429. That is a network error, not an empty catalogue. Record state can change or expire. [Full identifiers, observation times and limitations →](docs/evidence/LIVE_DEMO.md)
+
+> **Demo status:** reuse the saved genuine draft and published entity. No public hosted demo or video URL is established yet. Live update, close and native expiry remain unverified; their regression tests use synthetic adapters.
+
+## Two integrations, two essential jobs
+
+### 0G · Turn private context into actionable scope
+
+The server requests structured generation through the 0G Router using `0gm-1.0-35b-a3b`. The request selects private trust mode, asks for TEE verification, disables fallbacks and runs with a bounded timeout and no automatic retry. Returned content must pass strict schema and source-reference validation before it becomes a saved draft.
+
+**Why it belongs:** generation is the core step between rough notes and a useful brief. Removing it removes the drafting workflow. 0G provides the requested private execution route with model/provider/request evidence retained for inspection.
+
+**Evidence boundary:** live generation succeeded, but Router verification and routing-tier fields were absent. Independent cryptographic TEE verification is **not established**. Requested privacy settings are not attestation proof. [0G evidence and guarded probe →](docs/briefmint/0G_LIVE_PROBE.md)
+
+### Arkiv · Give the public opportunity its own owner and index
+
+The approved projection becomes an owner-signed entity under `tool-city.opportunity.v1` on **Rabdi, chain 7794095**. Arkiv supplies wallet ownership, indexed category/language/status/budget/deadline queries, entity identity and native expiry. The backend verifies the receipt and reads back the content; an independent reader queries the public network directly.
+
+**Why it belongs:** the public opportunity remains queryable outside BriefMint's private service. Removing Arkiv removes that wallet-owned public record and independent discovery path.
+
+**Evidence boundary:** create/read/discovery were demonstrated. Update/close/expiry have offline coverage only. The business deadline is a timestamp; native expiry is a network block height. [Schema](arkiv/schema.md) · [Usage](arkiv/how-you-use-arkiv.md) · [Rationale](arkiv/why-arkiv.md) · [Integration friction](arkiv/friction.md) · [Reach](arkiv/reach.md)
 
 ## Architecture
 
+### System and integration map
+
+![BriefMint system map with browser, private backend, 0G inference service, Arkiv Rabdi and independent reader boundaries](docs/assets/briefmint-system-map.svg)
+
+*Architecture illustration, not a live execution trace. [Open full-size map](docs/assets/briefmint-system-map.svg). Owner signatures happen in the browser; the server performs receipt and entity checks.*
+
+<details>
+<summary><strong>Editable architecture graph</strong></summary>
+
 ```mermaid
 flowchart LR
-  W[Owner wallet] --> UI[Next.js city and review UI]
-  UI --> API[Authenticated API]
-  API --> DB[(Private SQLite)]
-  API --> G[0G Router]
-  G --> API
-  API --> R[Structured draft and owner approval]
-  R --> UI
-  UI --> S[Owner wallet signs approved payload]
-  S --> A[Arkiv Rabdi]
+  UI[Owner workspace] --> API[Authenticated Next.js API]
+  API <--> DB[(Private SQLite)]
+  API -->|Private routing requested| G[0G Router]
+  G -->|Validated structured draft| API
+  API --> R[Owner review and hash-bound approval]
+  R --> W[Browser wallet signs public intent]
+  W --> A[Arkiv Rabdi]
   API -->|Receipt and entity readback| A
-  A --> P[Independent public reader]
+  P[Independent public reader] -->|Indexed query| A
 ```
 
-The browser sends only the approved public intent to Arkiv. SQLite is never copied onto the chain. See [detailed architecture and trust diagrams](docs/architecture/ARCHITECTURE.md).
+</details>
 
-| Technology | Actual role |
+### Approval and publication state map
+
+```mermaid
+flowchart LR
+  D[Private draft] -->|Deliberate generation| G[Saved structured result]
+  G -->|Owner edits| R[New revision]
+  R -->|Review exact public projection| A[Approved revision and hash]
+  A -->|Edit again| R
+  A -->|Prepare public-only intent| P[Publication pending]
+  P -->|Owner broadcasts| H[Hash recorded]
+  H -->|Receipt plus matching entity| L[Published and observed]
+  P -->|Broadcast cannot be determined| U[Unknown attempt stays locked]
+  H -->|Readback unavailable| U
+  U -->|Authoritative reconciliation only| H
+```
+
+*This graph describes the intended guarded workflow, not new live activity. An unknown attempt cannot be unlocked by an empty explorer or nonce zero.*
+
+**Private preparation and public publication use separate data representations.** Notes never flow directly from SQLite to Arkiv. Only the approved public projection is eligible for publishing.
+
+| Layer | Technology |
 |---|---|
-| Next.js 16.4.5 / React 19.3 / TypeScript | One frontend and Node API application; App Router pages and handlers |
-| Pixi.js 8, SVG/CSS overlays | Interactive city experience and workflow entry points |
-| Node 24 / built-in SQLite | Private persistence, additive migrations, quota and execution leases |
-| Zod 4 | Strict shared request, response and public-payload validation |
-| wagmi 3 / viem 2 / MetaMask | Browser wallet connection, authentication and owner signing |
-| 0G Router / `0gm-1.0-35b-a3b` | Structured drafting through requested private inference |
-| Arkiv SDK 1.0.1 / Rabdi | Wallet-owned entities, indexed public queries, receipt/readback |
-| Vitest / ESLint / TypeScript | Offline regression tests and static checks |
+| **Interface** | Next.js 16.4.5, React 19.3, TypeScript, Pixi.js city with SVG/CSS overlays |
+| **Backend** | Node 24, Next.js route handlers, SQLite, atomic quota/lease accounting |
+| **Contracts and validation** | Shared TypeScript DTOs, Zod 4, deterministic canonical JSON and SHA-256 |
+| **Wallet and public data** | wagmi 3, viem 2, MetaMask, Arkiv SDK 1.0.1 |
+| **Inference** | Server-only 0G Router integration, pinned model, structured response parser |
 
-Legacy translation, Whitechain checkout, Solidity contracts and the checkout example remain isolated historical functionality. BriefMint requires no Whitechain funds, escrow, applicant handling or funded bounty.
+[Three detailed architecture/trust diagrams →](docs/architecture/ARCHITECTURE.md)
 
-## Why 0G
+## Privacy by explicit boundaries
 
-0G supplies the drafting capability in the main workflow, rather than an ornamental integration. The server calls `https://router-api.0g.ai/v1` using the pinned model, private trust policy, `verify_tee: true`, disabled fallbacks, bounded timeout and no automatic retry. It validates the structured reply and saves sanitized request/model/provider evidence with the original result.
+| Stays in the access-controlled backend | Becomes public only after approval |
+|---|---|
+| Original notes and private source references | Title, summary, category and language |
+| Original model output and saved edit history | Deliverables, acceptance criteria, exclusions and questions |
+| Inference evidence and internal identifiers | Optional unfunded budget/contact, deadline, status and schema/revision metadata |
 
-A real app generation succeeded. **Private routing and verification were requested; independent cryptographic TEE execution was not established.** The observed Router verification and routing-tier metadata were absent. Neither a successful response nor a provider address proves attestation. See [request evidence](docs/evidence/LIVE_DEMO.md) and the [guarded 0G probe](docs/briefmint/0G_LIVE_PROBE.md). No unique-to-0G security guarantee is asserted beyond observed configuration and evidence.
+The backend and inference service process the notes. **Storage is not end-to-end encrypted**, and independent TEE verification is unavailable. Structural validation excludes private fields; the owner must still review prose for accidental disclosure. Public data and backups may outlive closing or expiry.
 
-## Why Arkiv
-
-Arkiv makes the reviewed opportunity a wallet-owned, queryable public entity rather than a row available only through our API. Its indexed schema supports category/language/status/budget/deadline queries; `$owner`, `$key` and `$expiresAt` come from network state. A separate reader can discover data while the BriefMint backend is stopped.
-
-The named schema is `tool-city.opportunity.v1` on **Rabdi, chain 7794095**. Owner wallet: `0xD582d7C24528a3f0294aCAFA46Fae6e797b76aB8`. The [schema](arkiv/schema.md), [usage](arkiv/how-you-use-arkiv.md), [rationale](arkiv/why-arkiv.md), [friction](arkiv/friction.md) and [reach](arkiv/reach.md) describe the actual integration. Native expiry is a network block height; the business deadline is a timestamp. Creation derives lifetime from deadline and observed block timing; patches do not extend it. Closing does not erase existing copies.
-
-## Security and privacy
-
-Private notes, source IDs, inference evidence and internal identifiers stay in the access-controlled backend. Session cookies are HttpOnly, SameSite=Lax and Secure over HTTPS; private operations enforce origin, session owner and the matching `x-briefmint-owner` header. BriefMint wallet authentication uses chain 7794095, separately from legacy checkout.
-
-Only title, summary, category, language, optional unfunded budget/contact, deadline, structured public sections, status and schema/revision metadata enter the public projection. Approval is bound to its exact hash. A hash or transaction alone is not publication success: confirmed receipt plus matching entity readback is required. Unknown broadcasts stay locked; no automatic resubmission occurs.
-
-**The backend and configured inference service process the notes. Storage is not end-to-end encrypted.** Schema validation omits private fields structurally but cannot detect a private fact copied into approved prose. Review wording before approving. Public data and backups can outlive closure or expiry. Do not put real secrets in notes.
+Session ownership, origin checks and revision-bound approval protect private operations. Wallet secrets remain in the wallet. Publication requires matching onchain evidence; unknown broadcasts remain locked and are never automatically resubmitted. [Trust boundaries →](docs/architecture/ARCHITECTURE.md#data-and-security-boundary)
 
 ## Run locally
 
-Requires Node **24.x**, npm and a persistent writable disk. From a fresh checkout:
+**Prerequisites:** Node **24.x**, npm, a persistent writable disk; MetaMask for owner sign-in. A fresh clone contains no private notes, generated drafts, credentials or database.
 
 ```sh
+git clone --branch codex/briefmint-integration-fixes https://github.com/0xsan7/Eth-global-26-.git
+cd Eth-global-26-
 npm ci
 test -e .env.local || cp .env.example .env.local
+```
+
+Edit the ignored `.env.local` before starting:
+
+```dotenv
+APP_ORIGIN=http://127.0.0.1:3001
+AUTH_ALLOWED_ORIGINS=http://127.0.0.1:3001
+SESSION_SECRET=<generate-a-random-secret-of-at-least-32-characters-locally>
+DATABASE_PATH=./data/tool-city.sqlite
+```
+
+```sh
 npm run dev -- --hostname 127.0.0.1 --port 3001
 ```
 
-Before signing in, edit the ignored `.env.local` locally: set `APP_ORIGIN=http://127.0.0.1:3001`, matching `AUTH_ALLOWED_ORIGINS`, and a random `SESSION_SECRET` of at least 32 characters. `DATABASE_PATH=./data/tool-city.sqlite` stores private data; preserve it. Never overwrite an existing environment file or database. Open `http://127.0.0.1:3001`; `/briefs` is the private archive and `/opportunities` is public discovery. API routes are same-origin: no separate Vite frontend or CORS proxy is needed.
+Open **http://127.0.0.1:3001**. The city is `/`, private briefs are `/briefs`, and public discovery is `/opportunities`. Frontend and API share one Next.js origin.
 
-| Server configuration | Purpose |
+<details>
+<summary><strong>Enable 0G generation and Arkiv reconciliation</strong></summary>
+
+Keep credentials server-only. Never put 0G/session secrets in `NEXT_PUBLIC_*`, `VITE_*`, Git, screenshots or chat.
+
+| Environment variables | Purpose |
 |---|---|
-| `APP_ORIGIN`, `AUTH_ALLOWED_ORIGINS`, `SESSION_SECRET`, `DATABASE_PATH` | Origin, owner sessions and persistence |
-| `ZERO_G_API_KEY`, `ZERO_G_BASE_URL`, `ZERO_G_MODEL_ID`, `INFERENCE_TIMEOUT_MS` | Server-only 0G credentials, route/model and timeout |
-| `BRIEFMINT_ALLOWED_WALLETS`, `BRIEFMINT_COMPILATIONS_PER_WALLET` | Explicit operator wallet allowlist and new-brief allowance |
-| `BRIEFMINT_GLOBAL_DISPATCH_LIMIT`, `BRIEFMINT_QUOTA_WINDOW_ID`, `BRIEFMINT_QUOTA_WINDOW_END` | Dispatch ceiling and finite quota window |
-| `ARKIV_ACCESS_KEY` | Server readback access/rate-limit configuration; not a wallet credential |
+| `ZERO_G_API_KEY`, `ZERO_G_BASE_URL`, `ZERO_G_MODEL_ID` | Router credentials, `https://router-api.0g.ai/v1`, model `0gm-1.0-35b-a3b` |
+| `INFERENCE_TIMEOUT_MS` | Bounded request timeout |
+| `BRIEFMINT_ALLOWED_WALLETS`, `BRIEFMINT_COMPILATIONS_PER_WALLET` | Explicit wallet allowlist and new-brief allowance |
+| `BRIEFMINT_GLOBAL_DISPATCH_LIMIT`, `BRIEFMINT_QUOTA_WINDOW_ID`, `BRIEFMINT_QUOTA_WINDOW_END` | Global attempt ceiling and finite quota window |
+| `ARKIV_ACCESS_KEY` | Server readback/access-rate configuration; not a wallet credential |
 
-Empty/invalid quota configuration disables compilation. Each dispatched attempt counts globally even if uncertain; the per-wallet limit counts distinct briefs first started in the window. Current operator inference quota is exhausted: reuse saved results. No key belongs in `NEXT_PUBLIC_*`, Git, logs, screenshots or chat. The browser's Arkiv reader accepts a deliberately public endpoint access key locally; it never needs a private key.
+Missing/invalid quota configuration disables compilation. Every dispatched attempt counts globally, including uncertain attempts; the per-wallet allowance counts distinct briefs first started in the window. Current operator compute quota is exhausted: reuse saved output. Funding or checkout on Whitechain is not required.
 
-For the existing operator-only ignored `.env.0g-smoke`, the safe server launcher loads allowlisted inference settings without printing them or calling inference:
+For the operator's existing ignored `.env.0g-smoke`, this launcher loads only allowlisted server settings and does not infer at startup:
 
 ```sh
 npm run dev:briefmint-0g -- --hostname 127.0.0.1 --port 3001
 ```
 
-A fresh clone contains no private database, credentials or generated drafts. Configuring credentials does not authorize spending. New inference and wallet writes require explicit operator approval. Configure MetaMask for Rabdi chain 7794095 using the installed SDK's [official network configuration](https://docs.arkiv.network/); publication needs testnet gas and the actual owner account. Do not import a private key into this application.
+Configure the wallet for Rabdi chain **7794095** using the installed SDK/official network configuration. Publishing requires the actual owner's wallet and testnet gas. Browser public readers accept a deliberately configured public endpoint access key locally; never supply a wallet private key to the application. New inference and wallet writes require explicit operator consent.
 
-For production, `npm run build` then `HOSTNAME=127.0.0.1 PORT=3001 npm start` starts the standalone server. Put it behind HTTPS, configure the real public origin, and use **one Node process with a persistent SQLite volume**, not disposable serverless storage or independent replicas. Back up the database consistently, restrict volume access, and define retention separately. No public hosted demo is established. See [operator runbook](docs/briefmint/LIVE_VALIDATION_AND_SUBMISSION.md).
+</details>
 
-## Demo and independent read
-
-The demonstrated opportunity is **Developer onboarding document [demo 2a69f504]**, revision 1, writing, open. Entity:
-
-`0x85ea1b83ec04c6f9ff795d75cfbd5f2d136cb69bb571c4ec6ec18dce648bb121`
-
-Read directly, without login, private DB or BriefMint API:
+<details>
+<summary><strong>Production deployment model</strong></summary>
 
 ```sh
-node --import tsx scripts/briefmint-arkiv-reader.ts --get 0x85ea1b83ec04c6f9ff795d75cfbd5f2d136cb69bb571c4ec6ec18dce648bb121 --public-endpoint
-node --import tsx scripts/briefmint-arkiv-reader.ts --list --public-endpoint --status open --category writing --limit 20
+npm run build
+HOSTNAME=127.0.0.1 PORT=3001 npm start
 ```
 
-The anonymous endpoint can return HTTP 429; failed queries are not an empty catalogue. Use [live evidence](docs/evidence/LIVE_DEMO.md) for transaction/hash/expiry and the [2½-minute demo guide](docs/submission/DEMO_GUIDE.md) to reuse existing artifacts without more inference or transactions. This entity is a separately approved copy of a genuine generated draft; the original R3 attempt remains unknown and must not be retried. Duplicate-content risk remains disclosed.
+Use one Node 24 process behind HTTPS, the real public origin, Secure cookies and a persistent SQLite volume. Independent replicas and disposable serverless disks do not satisfy this storage model. Restrict volume access, back up SQLite consistently, and define retention. No production deployment is established. The build also packages the separate legacy checkout example.
 
-## Verification
+</details>
+
+## Verification and project map
 
 ```sh
-npm test
+npm test              # Server and UI tests with labeled synthetic fixtures
 npm run typecheck
 npm run lint
 npm run build
-npm run smoke:local
+npm run smoke:local   # Disposable local HTTP smoke; no inference or chain writes
 ```
 
-Tests use labeled synthetic inference and chain fixtures: they are not live sponsor evidence. `npm test` runs server and UI suites. Build also packages the separate legacy checkout example. `smoke:local` uses disposable synthetic data and no paid integrations. Legacy simulated-chain tests are available separately with `npm run test:contracts`; do not run deployment commands for BriefMint. See [submission verification](docs/submission/VERIFICATION.md) for actual results from this documentation checkpoint.
+The [recorded verification checkpoint](docs/submission/VERIFICATION.md) reports actual results; offline tests are not live sponsor evidence. Legacy simulated-chain tests remain available as `npm run test:contracts`.
 
-## Limits and next work
+| Start here | What you will find |
+|---|---|
+| [`src/app/`](src/app/) | City/pages and same-origin API routes |
+| [`src/components/`](src/components/) | Tool City and BriefMint workflow UI |
+| [`src/lib/shared/briefs.ts`](src/lib/shared/briefs.ts) | Canonical DTOs, validators and public hashing |
+| [`src/lib/server/`](src/lib/server/) | Auth, persistence, inference, quota and reconciliation |
+| [`src/lib/arkiv/briefmint/`](src/lib/arkiv/briefmint/) | Public schema, reader and browser writer |
+| [`scripts/briefmint-arkiv-reader.ts`](scripts/briefmint-arkiv-reader.ts) | Read-only public client, independent of the application API |
 
-- Independent TEE verification is unavailable; the model may generate incorrect or sensitive prose.
-- Original R3 broadcast has no known hash and remains unresolved. Nonce zero/empty explorer history do not prove nonbroadcast.
-- Live create/read/discovery succeeded; live owner update, close and native expiry remain unverified. No expiry extension or reopening is provided.
-- Rabdi/Router availability, rate limits, testnet gas and operator compute quota affect readiness. Measured promotional-credit debit was not established.
-- HTTPS hosting, live lifecycle validation and asset/license clearance remain submission prerequisites. No open-source license has yet been selected for the repository.
+## Current limits and next steps
 
-Next work: validate attestation when supported, reconcile the old intent with authoritative evidence, test live lifecycle under separate consent, and deploy a persistent demo. No new sponsors or payment scope are needed.
+- **Attestation:** independent cryptographic TEE verification is unavailable; missing Router evidence remains unknown. Credit debit/source was not measured.
+- **Recovery:** the original approved R3 attempt remains pending without a known hash. The demonstrated entity is a separately approved copy; duplicate-content risk remains. Do not retry or clear the old intent.
+- **Lifecycle:** live update, close and native expiry remain unverified. No expiry extension or reopening is provided.
+- **Submission:** public hosting, video/team contacts and license/asset clearance remain operator tasks. Provider availability, quota, public RPC limits and testnet gas affect the demo.
 
-## Team, attribution and submission
+Next: validate available attestation evidence, reconcile the original intent safely, demonstrate live lifecycle under separate consent, and deploy a persistent demo. BriefMint has no applicant inbox, escrow or payment flow; legacy translation/Whitechain code is separate.
 
-Verified Git contributor identities: **0xsan7, mevarx, VARX!!**; history also includes `usehoplite[bot]`. Roles and affiliations are not inferred. AI assistance was used for planning, code, tests and documentation. This is not an official partnership or award claim.
+## Team and acknowledgements
 
-[Attribution and license status](docs/submission/ATTRIBUTION.md) identifies inherited code/assets and unresolved rights. There is no root license; the operator must confirm rights and choose an appropriate license before claiming open-source eligibility. [Submission copy](docs/submission/ETHGLOBAL_SUBMISSION.md), [recording checklist](docs/submission/RECORDING_CHECKLIST.md) and [architecture](docs/architecture/ARCHITECTURE.md) are ready for review; replace public demo/video/contact placeholders only with verified details.
+Git records contributions under **0xsan7**, **mevarx** and **VARX!!**, plus `usehoplite[bot]`. AI assistance was used in planning, implementation, testing and documentation. No affiliation, award or partnership is implied.
+
+Inherited city/reference code, bundled fonts and dependencies require the [documented attribution review](docs/submission/ATTRIBUTION.md). **No root license has been selected**; public visibility is not an open-source license grant.
+
+[Submission copy](docs/submission/ETHGLOBAL_SUBMISSION.md) · [Demo guide](docs/submission/DEMO_GUIDE.md) · [Recording checklist](docs/submission/RECORDING_CHECKLIST.md) · [Live evidence](docs/evidence/LIVE_DEMO.md)
