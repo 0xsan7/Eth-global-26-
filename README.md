@@ -79,6 +79,26 @@ npm run smoke:local
 
 Local tests use explicit doubles and test tokens; they do not establish official-token settlement, model availability, translation quality or sponsor eligibility. The confirmed-purchase cache does not implement later chain-reorg rollback; wallet authentication currently covers EOA signatures. The backend sees the draft. These limitations and remaining gates are recorded in the handoff.
 
+## Tool City reference UI (`apps/web`)
+
+`apps/web/` is a self-contained React/Vite front end themed as Tool City. It
+renders the five-site translation district, the workshop departures board, and
+a local English → Hindi job demo (Arkiv listing → Whitechain test-USDT
+checkout → private run → Archive review/export). It makes no network calls and
+keeps all job state in the browser; amounts are labelled test USDT and the
+sample draft is demo data.
+
+Run it with:
+
+```bash
+npm --prefix apps/web install
+npm run reference:dev
+```
+
+It serves at `http://127.0.0.1:5173`. The copied Vite config still proxies
+`/api`, `/auth`, `/health`, and the reference WebSocket to port 4100, but the
+Tool City demo does not use that backend.
+
 ## Agent plan and handoff
 
 - [Staged backend plan and model/reasoning assignments](docs/san-backend-payments.md)
