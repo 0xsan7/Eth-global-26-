@@ -1,315 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
-import { JobReviewModal } from "@/components/toolcity/JobReviewModal";
 import { ToolCityScene } from "@/components/toolcity/ToolCityScene";
-import WorkshopBoard from "@/components/toolcity/WorkshopBoard";
-import { ToolHudConsole } from "@/components/hud/ToolHudConsole";
-import { ToolHudInspector } from "@/components/hud/ToolHudInspector";
-import { ToolHudOrder } from "@/components/hud/ToolHudOrder";
-import { ToolHudScan } from "@/components/hud/ToolHudScan";
-import {
-  ARCHIVED_JOB,
-  DEMO_SOURCE,
-  DEMO_TRANSLATION_SEGMENTS,
-  isSourceValid,
-  jobTitle,
-  splitSegments,
-  type BuildingId,
-  type ToolJob,
-  type TranslationSegment,
-} from "@/lib/tool-city-demo";
+import { briefApiCall, BriefmintApiError, connectBriefmintWallet, logoutBriefmintWallet } from "@/lib/briefmint-api";
+import { arkivBroadcastTransactionHash, writeArkivIntent } from "@briefmint/arkiv/write";
+import { createArkivBriefmintReader } from "@briefmint/arkiv/read";
+import { hashPublicOpportunity, projectPublicOpportunity, type BriefCandidate, type BriefView, type BriefmintConfig, type OpportunityRecord, type PublicationIntent } from "@briefmint/shared";
+import type { BuildingId } from "@/lib/tool-city-demo";
 
-export interface AppProps {
-  onExitToTerminal: () => void;
-}
+type CitySite = BuildingId | "release";
+const initialDeadline = () => new Date(Date.now() + 3 * 86400000).toISOString();
+const blankDraft = (): BriefCandidate => ({ parameters: { title: "", summary: "", category: "writing", language: "en", budgetUsdCents: null, deadline: initialDeadline(), contactUrl: null }, sections: { deliverables: [""], acceptanceCriteria: [""], exclusions: [], openQuestions: [] }, status: "open" });
+const failure = (error: unknown) => error instanceof BriefmintApiError ? error.message : "BriefMint could not complete that action.";
+function download(filename: string, mediaType: string, content: string) { const blob = new Blob([content], { type: mediaType }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 0); }
 
-function randomHex(bytes: number): string {
-  const values = new Uint8Array(bytes);
-  crypto.getRandomValues(values);
-  return `0x${Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("")}`;
-}
-
-export default function App({ onExitToTerminal }: AppProps) {
-  const [selected, setSelected] = useState<BuildingId | null>("home");
-  const [source, setSource] = useState(DEMO_SOURCE);
-  const [job, setJob] = useState<ToolJob | null>(null);
-  const [savedJobs, setSavedJobs] = useState<ToolJob[]>([ARCHIVED_JOB]);
-  const [reviewJobId, setReviewJobId] = useState<string | null>(null);
-  const [boardOpen, setBoardOpen] = useState(false);
-  const [shared, setShared] = useState(false);
-  const shareTimer = useRef<number | null>(null);
-
-  const jobs = useMemo(
-    () => (job ? [job, ...savedJobs.filter((saved) => saved.id !== job.id)] : savedJobs),
-    [job, savedJobs],
-  );
-  const reviewJob = useMemo(
-    () => jobs.find((candidate) => candidate.id === reviewJobId) ?? null,
-    [jobs, reviewJobId],
-  );
-
-  useEffect(() => {
-    if (job?.status !== "running") return;
-    const jobId = job.id;
-    const timer = window.setTimeout(() => {
-      setJob((current) =>
-        current && current.id === jobId && current.status === "running"
-          ? {
-              ...current,
-              status: "ready",
-              translation: DEMO_TRANSLATION_SEGMENTS.map((segment) => ({ ...segment })),
-              edited: null,
-              updatedAt: new Date().toISOString(),
-              modelId: "0g-private-translate-v1",
-              requestId: `req_0g_${Math.random().toString(16).slice(2, 10)}`,
-              routerTeeVerified: true,
-            }
-          : current,
-      );
-    }, 1900);
-    return () => window.clearTimeout(timer);
-  }, [job?.id, job?.status]);
-
-  useEffect(
-    () => () => {
-      if (shareTimer.current) window.clearTimeout(shareTimer.current);
-    },
-    [],
-  );
-
-  const focusSource = useCallback(() => {
-    window.requestAnimationFrame(() => {
-      document.getElementById("tc-source")?.focus();
-    });
-  }, []);
-
-  const createJob = useCallback(() => {
-    if (!isSourceValid(source)) return;
-    const now = new Date().toISOString();
-    setJob({
-      id: randomHex(32),
-      title: jobTitle(source),
-      status: "awaiting_payment",
-      source,
-      sourceSegments: splitSegments(source),
-      translation: null,
-      edited: null,
-      createdAt: now,
-      updatedAt: now,
-      costLabel: "$1.00",
-      txHash: null,
-      modelId: null,
-      requestId: null,
-      routerTeeVerified: null,
-      attemptsUsed: 0,
-    });
-    setSelected("home");
-  }, [source]);
-
-  const verifyPayment = useCallback(() => {
-    setJob((current) =>
-      current?.status === "awaiting_payment"
-        ? {
-            ...current,
-            status: "paid",
-            txHash: randomHex(32),
-            updatedAt: new Date().toISOString(),
-          }
-        : current,
-    );
-    setSelected("treasury");
-  }, []);
-
-  const runTranslation = useCallback(() => {
-    setJob((current) =>
-      current?.status === "paid" || current?.status === "failed"
-        ? {
-            ...current,
-            status: "running",
-            attemptsUsed: current.attemptsUsed + 1,
-            updatedAt: new Date().toISOString(),
-          }
-        : current,
-    );
-    setSelected("studio");
-  }, []);
-
-  const newDraft = useCallback(() => {
-    setJob(null);
-    setReviewJobId(null);
-    setSelected("home");
-    focusSource();
-  }, [focusSource]);
-
-  const openReview = useCallback((target: ToolJob) => {
-    if (target.status === "ready") {
-      setReviewJobId(target.id);
-      setSelected("archive");
-      return;
-    }
-    setSelected(
-      target.status === "awaiting_payment"
-        ? "treasury"
-        : target.status === "paid" || target.status === "running" || target.status === "failed"
-          ? "studio"
-          : "home",
-    );
-  }, []);
-
-  const saveEdits = useCallback((segments: TranslationSegment[]) => {
-    if (!reviewJob) return;
-    if (job?.id === reviewJob.id) {
-      setJob((current) =>
-        current ? { ...current, edited: segments, updatedAt: new Date().toISOString() } : current,
-      );
-      return;
-    }
-    setSavedJobs((current) =>
-      current.map((saved) =>
-        saved.id === reviewJob.id
-          ? { ...saved, edited: segments, updatedAt: new Date().toISOString() }
-          : saved,
-      ),
-    );
-  }, [job?.id, reviewJob]);
-
-  const handlePrimary = useCallback(() => {
-    if (!job) {
-      createJob();
-      return;
-    }
-    if (job.status === "awaiting_payment") {
-      setSelected("treasury");
-      return;
-    }
-    if (job.status === "paid" || job.status === "failed") {
-      runTranslation();
-      return;
-    }
-    if (job.status === "ready") {
-      setReviewJobId(job.id);
-      setSelected("archive");
-    }
-  }, [createJob, job, runTranslation]);
-
-  const handleShare = useCallback(() => {
-    void navigator.clipboard?.writeText(window.location.href).catch(() => undefined);
-    setShared(true);
-    if (shareTimer.current) window.clearTimeout(shareTimer.current);
-    shareTimer.current = window.setTimeout(() => setShared(false), 1800);
-  }, []);
-
-  const workerAt: BuildingId | "plaza" = !job
-    ? "plaza"
-    : job.status === "awaiting_payment"
-      ? "home"
-      : job.status === "paid"
-        ? "treasury"
-        : job.status === "running"
-          ? "studio"
-          : job.status === "ready"
-            ? "archive"
-            : "studio";
-
-  return (
-    <div className={cn("hud-root", "hud-root--reveal-complete")}>
-      <ToolCityScene
-        selected={selected}
-        onSelect={setSelected}
-        workerAt={workerAt}
-        busy={job?.status === "running"}
-      />
-
-      <div aria-hidden="true" className="hud-vignette" />
-
-      <div className="hud-layer">
-        <div className="hud-column hud-column--main">
-          <ToolHudScan
-            job={job}
-            running={job?.status === "running"}
-            shared={shared}
-            onShare={handleShare}
-            onOpenBoard={() => setBoardOpen(true)}
-          />
-
-          <div className="flex-1" />
-
-          <ToolHudInspector
-            selected={selected}
-            job={job}
-            draftSource={source}
-            onClose={() => setSelected(null)}
-            onOpenBoard={() => setBoardOpen(true)}
-            onDraft={() => {
-              if (job) newDraft();
-              setSelected("home");
-              focusSource();
-            }}
-            onVerify={verifyPayment}
-            onRun={runTranslation}
-            onReview={() => {
-              if (job?.status === "ready") setReviewJobId(job.id);
-              setSelected("archive");
-            }}
-          />
-
-          <ToolHudOrder
-            source={source}
-            onSourceChange={setSource}
-            job={job}
-            onPrimary={handlePrimary}
-            onNewDraft={newDraft}
-            onOpenBoard={() => setBoardOpen(true)}
-          />
-        </div>
-
-        <ToolHudConsole
-          jobs={jobs}
-          job={job}
-          onOpenJob={openReview}
-          onOpenArchive={() => setSelected("archive")}
-          onOpenBoard={() => setBoardOpen(true)}
-          onStartDraft={() => {
-            setSelected("home");
-            focusSource();
-          }}
-          onVerify={verifyPayment}
-          onRun={runTranslation}
-          onReview={() => {
-            if (job?.status === "ready") setReviewJobId(job.id);
-            setSelected("archive");
-          }}
-        />
-      </div>
-
-      {boardOpen ? (
-        <WorkshopBoard
-          mode="dialog"
-          onClose={() => setBoardOpen(false)}
-          onEnter={() => {
-            setBoardOpen(false);
-            setSelected("registry");
-          }}
-        />
-      ) : null}
-
-      {reviewJob ? (
-        <JobReviewModal
-          key={reviewJob.id}
-          job={reviewJob}
-          onClose={() => setReviewJobId(null)}
-          onSave={saveEdits}
-        />
-      ) : null}
-
-      <button
-        type="button"
-        onClick={onExitToTerminal}
-        className="tc-exit-button retro"
-        title="Return to the workshop terminal"
-      >
-        ← terminal
-      </button>
-    </div>
-  );
+export default function App() {
+  const [selected, setSelected] = useState<CitySite>("home"); const [address, setAddress] = useState<string | null>(null);
+  const [config, setConfig] = useState<BriefmintConfig | null>(null); const [briefs, setBriefs] = useState<BriefView[]>([]); const [brief, setBrief] = useState<BriefView | null>(null);
+  const [notes, setNotes] = useState(""); const [draft, setDraft] = useState<BriefCandidate>(blankDraft); const [intent, setIntent] = useState<PublicationIntent | null>(null); const [publicRecords, setPublicRecords] = useState<OpportunityRecord[]>([]);
+  const [busy, setBusy] = useState<string | null>(null); const [message, setMessage] = useState("Connect your wallet to open a private BriefMint workspace.");
+  const sessionEpoch = useRef(0);
+  const refreshConfig = useCallback(async () => { try { setConfig(await briefApiCall("config", {})); } catch { setMessage("BriefMint configuration is unavailable."); } }, []);
+  const loadBrief = useCallback(async (id: string) => { const epoch = sessionEpoch.current; const value = await briefApiCall("get", {}, { id }); if (epoch !== sessionEpoch.current) return value; setBrief(value); setDraft(value.editedDraft ?? blankDraft()); setIntent(value.publication.pending?.intent ?? null); return value; }, []);
+  const loadBriefs = useCallback(async () => { const epoch = sessionEpoch.current; const page = await briefApiCall("list", {}); const values = await Promise.all(page.briefs.map(item => briefApiCall("get", {}, { id: item.id }))); if (epoch === sessionEpoch.current) setBriefs(values); return values; }, []);
+  useEffect(() => { void refreshConfig(); }, [refreshConfig]);
+  useEffect(() => { if (brief?.executionStatus !== "running") return; const timer = window.setInterval(() => { void loadBrief(brief.id).catch(() => undefined); }, 2000); return () => window.clearInterval(timer); }, [brief?.id, brief?.executionStatus, loadBrief]);
+  useEffect(() => { const provider = window.ethereum; if (!provider?.on) return; const resetForWalletChange = () => { sessionEpoch.current += 1; void logoutBriefmintWallet(); setAddress(null); setBriefs([]); setBrief(null); setNotes(""); setDraft(blankDraft()); setIntent(null); setBusy(null); setMessage("Wallet or network changed. Sign in again to load that account's private workspace."); }; provider.on("accountsChanged", resetForWalletChange); provider.on("chainChanged", resetForWalletChange); return () => { provider.removeListener?.("accountsChanged", resetForWalletChange); provider.removeListener?.("chainChanged", resetForWalletChange); }; }, []);
+  const connect = async () => { setBusy("connect"); try { const account = await connectBriefmintWallet(); setAddress(account); const values = await loadBriefs(); if (values[0]) await loadBrief(values[0].id); setMessage("Wallet session established. Private records are visible only to this signed-in address."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const disconnect = async () => { sessionEpoch.current += 1; await logoutBriefmintWallet(); setAddress(null); setBriefs([]); setBrief(null); setNotes(""); setDraft(blankDraft()); setIntent(null); setMessage("Signed out. Private brief state was cleared from this browser view."); };
+  const create = async () => { setBusy("create"); try { const value = await briefApiCall("create", { notes, publicParameters: draft.parameters }); setBrief(value); setBriefs(current => [value, ...current.filter(item => item.id !== value.id)]); setDraft(blankDraft()); setNotes(""); setSelected("studio"); setMessage("Private notes were saved. Start compilation deliberately from AI Studio."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const run = async () => { if (!brief) return; setBusy("run"); try { const value = await briefApiCall("run", {}, { id: brief.id }); setBrief(value); setMessage(value.executionStatus === "running" ? "Private compilation is running. The city polls saved state only." : "Compilation returned a saved state."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const saveDraft = async () => { if (!brief) return; setBusy("save"); try { const value = await briefApiCall("saveDraft", { expectedRevision: brief.draftRevision, draft }, { id: brief.id }); setBrief(value); setDraft(value.editedDraft!); setMessage("Edited public candidate saved. Previous approval is invalidated."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const approve = async () => { if (!brief) return; setBusy("approve"); try { const hash = await hashPublicOpportunity(projectPublicOpportunity(draft, brief.draftRevision)); const value = await briefApiCall("approve", { expectedRevision: brief.draftRevision, publicPayloadHash: hash }, { id: brief.id }); setBrief(value); setMessage("The exact public revision is approved. Review its preview before preparing a wallet write."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const prepare = async (operation: "create" | "update" | "close") => { if (!brief) return; setBusy("prepare"); try { const hash = await hashPublicOpportunity(projectPublicOpportunity(draft, brief.draftRevision)); const id = `0x${crypto.getRandomValues(new Uint8Array(32)).reduce((out, byte) => out + byte.toString(16).padStart(2, "0"), "")}`; const value = await briefApiCall("prepare", { intentId: id, expectedRevision: brief.draftRevision, publicPayloadHash: hash, operation }, { id: brief.id }); setIntent(value); setMessage("Prepared the exact approved public payload. A wallet write needs configured Arkiv access and your signature."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const refreshPublication = async () => { if (!brief) return; setBusy("refresh"); try { const value = await briefApiCall("refresh", {}, { id: brief.id }); setBrief(value); setMessage("Publication state was refreshed from the configured independent reader."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const discover = async () => { const accessKey = import.meta.env.VITE_ARKIV_ACCESS_KEY as string | undefined; if (!accessKey) { setMessage("Set the public VITE_ARKIV_ACCESS_KEY to query Arkiv directly from this browser."); return; } setBusy("discover"); try { const page = await createArkivBriefmintReader({ accessKey }).list({ language: "en", status: "open", deadlineAfter: new Date().toISOString(), limit: 20 }); setPublicRecords(page.records); setMessage(`Read ${page.records.length} public opportunity record(s) directly from Arkiv.`); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const rememberSubmittedHash = (id: string, transactionHash: string) => setBrief(current => current?.id === id && current.publication.pending ? { ...current, publication: { ...current.publication, pending: { ...current.publication.pending, transactionHash } } } : current);
+  const reconcileSubmitted = async () => { if (!brief || !intent) return; const transactionHash = brief.publication.pending?.transactionHash; if (!transactionHash) return; setBusy("reconcile"); try { const value = await briefApiCall("reconcile", { intentId: intent.intentId, transactionHash, entityKey: null }, { id: brief.id }); setBrief(value); setIntent(value.publication.pending?.intent ?? null); setMessage(value.publication.status === "pending" ? "Broadcast remains pending; do not sign this intent again." : "Arkiv transaction was independently reconciled."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const publish = async () => { if (!brief || !intent) return; const accessKey = import.meta.env.VITE_ARKIV_ACCESS_KEY as string | undefined; if (!accessKey) { setMessage("Set the public VITE_ARKIV_ACCESS_KEY before enabling an Arkiv wallet write."); return; } let submittedHash: string | null = null; setBusy("publish"); try { const write = await writeArkivIntent(intent, accessKey, window.ethereum); submittedHash = write.transactionHash; rememberSubmittedHash(brief.id, submittedHash); const value = await briefApiCall("reconcile", { intentId: intent.intentId, transactionHash: write.transactionHash, entityKey: write.entityKey }, { id: brief.id }); setBrief(value); setIntent(value.publication.pending?.intent ?? null); setMessage(value.publication.status === "pending" ? "Wallet write submitted; server reconciliation is pending." : "Arkiv entity was independently reconciled."); } catch (error) { const transactionHash = arkivBroadcastTransactionHash(error) ?? submittedHash; if (!transactionHash) { setMessage(failure(error)); } else { rememberSubmittedHash(brief.id, transactionHash); try { const value = await briefApiCall("reconcile", { intentId: intent.intentId, transactionHash, entityKey: null }, { id: brief.id }); setBrief(value); setIntent(value.publication.pending?.intent ?? null); setMessage("Wallet broadcast may have succeeded. Its hash was saved; reconcile it before any further action."); } catch { setMessage("Wallet broadcast may have succeeded. Reconcile its recorded hash before any further signing."); } } } finally { setBusy(null); } };
+  const exportBrief = async (audience: "private" | "public") => { if (!brief) return; setBusy("export"); try { const value = await briefApiCall("export", { format: "json", audience }, { id: brief.id, query: { format: "json", audience } }); download(value.filename, value.mediaType, value.content); setMessage(audience === "public" ? "Downloaded the approved public projection." : "Downloaded the owner-only private recovery export."); } catch (error) { setMessage(failure(error)); } finally { setBusy(null); } };
+  const preview = useMemo(() => brief ? projectPublicOpportunity(draft, brief.draftRevision) : null, [brief, draft]); const ready = brief?.executionStatus === "ready"; const draftDirty = Boolean(brief?.editedDraft && JSON.stringify(draft) !== JSON.stringify(brief.editedDraft)); const approved = brief?.review.status === "approved" && !draftDirty;
+  const workerAt: BuildingId | "plaza" = brief?.executionStatus === "running" ? "studio" : selected === "release" ? "treasury" : selected;
+  const updateLines = (key: keyof BriefCandidate["sections"], value: string) => setDraft(current => ({ ...current, sections: { ...current.sections, [key]: value.split("\n").map(item => item.trim()).filter(Boolean) } }));
+  return <div className="hud-root hud-root--reveal-complete"><ToolCityScene selected={selected === "release" ? "treasury" : selected} onSelect={site => setSelected(site)} workerAt={workerAt} busy={brief?.executionStatus === "running"} /><div aria-hidden="true" className="hud-vignette" />
+    <main className="hud-layer" aria-label="BriefMint workspace"><section className="hud-window w-[min(39rem,100%)] p-3"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2"><div><p className="retro text-sm text-amber-200">BRIEFMINT · PRIVATE TO PUBLIC</p><p className="text-xs text-sky-100/65">0G prepares private notes. You approve public fields. Arkiv gives wallet ownership and discovery.</p></div>{address ? <button className="hud-button" onClick={() => void disconnect()}>Sign out {address.slice(0, 6)}…{address.slice(-4)}</button> : <button className="hud-button" disabled={busy === "connect"} onClick={() => void connect()}>{busy === "connect" ? "Connecting…" : "Connect wallet"}</button>}</div><p className="mt-2 text-xs text-sky-100/75" role="status">{message}</p>{config ? <div className="mt-2 flex flex-wrap gap-2 text-[10px]"><span className="hud-pill">AUTH {config.auth.readiness.available ? "READY" : "UNAVAILABLE"}</span><span className="hud-pill">0G {config.compilation.available ? "READY" : "UNAVAILABLE"}</span><span className="hud-pill">ARKIV {config.arkiv.readiness.available ? "READY" : "UNAVAILABLE"}</span><span className="hud-pill">CHAIN {config.arkiv.chainId}</span></div> : null}</section>
+      {!address ? <section className="hud-window mt-3 w-[min(39rem,100%)] p-3"><h1 className="retro text-sm text-amber-200">Public Arkiv reader</h1><p className="mt-1 text-xs text-sky-100/65">This query bypasses the BriefMint API and reads the public Arkiv index directly.</p><button className="hud-button mt-2" disabled={busy !== null || !import.meta.env.VITE_ARKIV_ACCESS_KEY} onClick={() => void discover()}>{busy === "discover" ? "Reading Arkiv…" : import.meta.env.VITE_ARKIV_ACCESS_KEY ? "Discover public opportunities" : "Arkiv access key required"}</button>{publicRecords.map(record => <article key={record.entityKey} className="mt-2 border border-white/10 p-2 text-xs"><p>{record.payload.title} · {record.payload.category} · {record.payload.status}</p><p className="text-sky-100/60">{record.entityKey.slice(0, 12)}… · observed block {record.observedAtBlock}</p></article>)}</section> : null}
+      {address ? <section className="hud-window mt-3 w-[min(39rem,100%)] p-3"><nav className="mb-3 flex flex-wrap gap-2">{(["home", "studio", "release", "registry", "archive"] as CitySite[]).map(site => <button key={site} className={`hud-button ${selected === site ? "hud-button--active" : ""}`} onClick={() => setSelected(site)}>{site === "home" ? "Home" : site === "studio" ? "AI Studio" : site === "release" ? "Release Desk" : site === "registry" ? "Registry" : "Archive"}</button>)}</nav>
+        {selected === "home" ? <div className="grid gap-2"><h1 className="retro text-sm text-amber-200">Creator’s Home · private intake</h1><p className="text-xs text-sky-100/65">Notes remain private to your BriefMint session and backend. Do not include anything you would not want the application operator to process.</p><textarea className="hud-field__input min-h-28 w-full" value={notes} onChange={event => setNotes(event.target.value)} placeholder="Private project notes…" maxLength={5000} /><input className="hud-field__input" value={draft.parameters.title} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, title: event.target.value } }))} placeholder="Public opportunity title" maxLength={120} /><textarea className="hud-field__input min-h-16 w-full" value={draft.parameters.summary} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, summary: event.target.value } }))} placeholder="Public summary you are willing to publish" maxLength={1000} /><div className="flex gap-2"><select className="hud-field__input" value={draft.parameters.category} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, category: event.target.value as "writing" | "design" } }))}><option value="writing">Writing</option><option value="design">Design</option></select><input className="hud-field__input" type="datetime-local" value={draft.parameters.deadline.slice(0, 16)} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, deadline: new Date(event.target.value).toISOString() } }))} /></div><button className="hud-button" disabled={!notes.trim() || !draft.parameters.title.trim() || !draft.parameters.summary.trim() || busy !== null} onClick={() => void create()}>{busy === "create" ? "Saving…" : "Save private brief"}</button></div> : null}
+        {selected === "studio" ? <div className="grid gap-2"><h1 className="retro text-sm text-teal-200">AI Studio · private compilation</h1>{brief ? <><p className="text-xs">Status: <b>{brief.executionStatus}</b> · attempts {brief.attemptsUsed}/2</p><p className="text-xs text-sky-100/65">Private-only routing is required; successful results are saved before they appear here. No timer fabricates a result.</p><button className="hud-button" disabled={!config?.compilation.available || !["draft", "failed", "interrupted"].includes(brief.executionStatus) || busy !== null} onClick={() => void run()}>{busy === "run" ? "Dispatching…" : config?.compilation.available ? "Start private compilation" : "Compilation unavailable"}</button>{brief.evidence ? <pre className="overflow-auto text-[10px]">{JSON.stringify(brief.evidence, null, 2)}</pre> : null}</> : <p className="text-xs">Create a private brief first.</p>}</div> : null}
+        {selected === "release" ? <div className="grid gap-2"><h1 className="retro text-sm text-amber-200">Release Desk · exact public approval</h1>{ready ? <><p className="text-xs text-sky-100/65">Only these allowlisted fields are shown in the public preview. Saving creates a new revision and invalidates prior approval.</p><input className="hud-field__input" value={draft.parameters.title} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, title: event.target.value } }))} placeholder="Public title" /><textarea className="hud-field__input min-h-16 w-full" value={draft.parameters.summary} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, summary: event.target.value } }))} placeholder="Public summary" /><div className="flex gap-2"><input className="hud-field__input" type="number" min="0" value={draft.parameters.budgetUsdCents ?? ""} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, budgetUsdCents: event.target.value === "" ? null : Number(event.target.value) } }))} placeholder="Budget in USD cents" /><input className="hud-field__input" type="url" value={draft.parameters.contactUrl ?? ""} onChange={event => setDraft(current => ({ ...current, parameters: { ...current.parameters, contactUrl: event.target.value === "" ? null : event.target.value } }))} placeholder="https:// public contact" /></div><div className="flex gap-2"><input className="hud-field__input" type="datetime-local" value={draft.parameters.deadline.slice(0, 16)} onChange={event => { if (event.target.value) setDraft(current => ({ ...current, parameters: { ...current.parameters, deadline: new Date(event.target.value).toISOString() } })); }} /><select className="hud-field__input" value={draft.status} onChange={event => setDraft(current => ({ ...current, status: event.target.value as "open" | "closed" }))}><option value="open">Open opportunity</option><option value="closed">Closed opportunity</option></select></div><textarea className="hud-field__input min-h-16 w-full" value={draft.sections.deliverables.join("\n")} onChange={event => updateLines("deliverables", event.target.value)} placeholder="Public deliverables, one per line" /><textarea className="hud-field__input min-h-16 w-full" value={draft.sections.acceptanceCriteria.join("\n")} onChange={event => updateLines("acceptanceCriteria", event.target.value)} placeholder="Public acceptance criteria, one per line" /><textarea className="hud-field__input min-h-12 w-full" value={draft.sections.exclusions.join("\n")} onChange={event => updateLines("exclusions", event.target.value)} placeholder="Public exclusions, one per line" /><textarea className="hud-field__input min-h-12 w-full" value={draft.sections.openQuestions.join("\n")} onChange={event => updateLines("openQuestions", event.target.value)} placeholder="Public open questions, one per line" /><button className="hud-button" disabled={busy !== null} onClick={() => void saveDraft()}>{busy === "save" ? "Saving…" : draftDirty ? "Save changed public candidate" : "Save public candidate"}</button><pre className="max-h-48 overflow-auto text-[10px]">{JSON.stringify(preview, null, 2)}</pre><button className="hud-button" disabled={busy !== null || approved || draftDirty} onClick={() => void approve()}>{approved ? "Current revision approved" : draftDirty ? "Save before exact approval" : busy === "approve" ? "Approving…" : "Approve this exact public revision"}</button></> : <p className="text-xs">A saved, validated compilation is required before editing or approval.</p>}</div> : null}
+        {selected === "registry" ? <div className="grid gap-2"><h1 className="retro text-sm text-amber-200">Registry Hall · Arkiv publication & discovery</h1>{brief ? <><p className="text-xs">Publication: {brief.publication.status} · observation {brief.publication.freshness}</p><button className="hud-button" disabled={busy !== null} onClick={() => void refreshPublication()}>{busy === "refresh" ? "Refreshing…" : "Refresh server chain observation"}</button><button className="hud-button" disabled={!approved || brief.publication.pending !== null || busy !== null} onClick={() => void prepare(draft.status === "closed" ? "close" : brief.publication.confirmed ? "update" : "create")}>{busy === "prepare" ? "Preparing…" : draft.status === "closed" ? "Prepare approved close" : brief.publication.confirmed ? "Prepare approved update" : "Prepare wallet publication"}</button>{intent ? <><pre className="max-h-52 overflow-auto text-[10px]">{JSON.stringify(intent, null, 2)}</pre>{brief.publication.pending?.transactionHash ? <button className="hud-button" disabled={busy !== null} onClick={() => void reconcileSubmitted()}>{busy === "reconcile" ? "Reconciling…" : "Reconcile submitted transaction"}</button> : <button className="hud-button" disabled={busy !== null || !import.meta.env.VITE_ARKIV_ACCESS_KEY} onClick={() => void publish()}>{busy === "publish" ? "Waiting for wallet…" : import.meta.env.VITE_ARKIV_ACCESS_KEY ? "Sign and publish with wallet" : "Arkiv access key required"}</button>}</> : null}<button className="hud-button" disabled={busy !== null || !import.meta.env.VITE_ARKIV_ACCESS_KEY} onClick={() => void discover()}>{busy === "discover" ? "Reading Arkiv…" : import.meta.env.VITE_ARKIV_ACCESS_KEY ? "Discover public Arkiv opportunities" : "Arkiv access key required"}</button>{publicRecords.map(record => <article key={record.entityKey} className="border border-white/10 p-2 text-xs"><p>{record.payload.title} · {record.payload.category} · {record.payload.status}</p><p className="text-sky-100/60">{record.entityKey.slice(0, 12)}… · observed block {record.observedAtBlock}</p></article>)}<p className="text-xs text-sky-100/60">Preparing sends no transaction. Signing sends only the displayed approved public intent through your browser wallet. A recorded broadcast must be reconciled before it can be signed again. Discovery reads Arkiv directly, without the BriefMint API.</p></> : <p className="text-xs">Choose a saved brief first.</p>}</div> : null}
+        {selected === "archive" ? <div className="grid gap-2"><h1 className="retro text-sm text-sky-200">Archive · private recovery</h1><div className="flex flex-wrap gap-2">{briefs.map(item => <button key={item.id} className="hud-button" onClick={() => void loadBrief(item.id)}>{item.editedDraft?.parameters.title ?? item.publicParameters.title} · {item.executionStatus}</button>)}</div>{brief ? <><p className="text-xs">Private brief {brief.id.slice(0, 10)}… · revision {brief.draftRevision}</p><button className="hud-button" disabled={busy !== null} onClick={() => void exportBrief("private")}>Download private recovery export</button><button className="hud-button" disabled={!approved || busy !== null} onClick={() => void exportBrief("public")}>Download approved public export</button></> : <p className="text-xs">No private briefs are loaded.</p>}</div> : null}
+      </section> : null}</main></div>;
 }

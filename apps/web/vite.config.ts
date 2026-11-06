@@ -8,16 +8,15 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "./src"),
+      "@briefmint/shared": resolve(import.meta.dirname, "../../src/lib/shared/briefs.ts"),
+      "@briefmint/arkiv": resolve(import.meta.dirname, "../../src/lib/arkiv/briefmint"),
       "@sudo-city/protocol": resolve(import.meta.dirname, "./src/vendor/protocol/index.ts"),
     },
   },
   server: {
     host: "127.0.0.1",
     port: 5173,
-    proxy: {
-      "/api": "http://127.0.0.1:4100",
-      "/auth": "http://127.0.0.1:4100",
-      "/health": "http://127.0.0.1:4100",
-    },
+    fs: { allow: [resolve(import.meta.dirname, "../..")] },
+    proxy: { "/api": { target: "http://127.0.0.1:4100", changeOrigin: false } },
   },
 });

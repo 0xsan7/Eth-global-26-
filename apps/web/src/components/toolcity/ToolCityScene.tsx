@@ -308,11 +308,11 @@ export function ToolCityScene({ selected, onSelect, workerAt, busy = false }: To
   const worker = WORKER_POSITIONS[workerAt];
 
   return (
-    <div className="game-canvas tc-scene" aria-label="Isometric Tool City translation district">
+    <div className="game-canvas tc-scene" aria-label="Isometric BriefMint private-to-public district">
       <svg
         viewBox="0 0 1000 700"
         role="img"
-        aria-label="Tool City neighbourhood: Registry Hall, Treasury and Translation Studio behind a plaza, with Creator's Home and the Archive in front."
+        aria-label="BriefMint neighbourhood: Registry Hall, Release Desk and AI Studio behind a plaza, with Creator's Home and the Archive in front."
         preserveAspectRatio="xMidYMid slice"
       >
         <defs>
@@ -417,7 +417,7 @@ export function ToolCityScene({ selected, onSelect, workerAt, busy = false }: To
             letterSpacing={8}
             fill="#f0b35c"
           >
-            TOOL CITY
+            BRIEFMINT
           </text>
           <text
             x={0}
@@ -428,7 +428,7 @@ export function ToolCityScene({ selected, onSelect, workerAt, busy = false }: To
             letterSpacing={4}
             fill="#8fb8c8"
           >
-            TRANSLATION DISTRICT · BLOCK 01
+            PRIVATE → PUBLIC · BLOCK 01
           </text>
         </g>
 
@@ -452,7 +452,7 @@ export function ToolCityScene({ selected, onSelect, workerAt, busy = false }: To
           role="img"
           aria-label={
             busy
-              ? "Document worker carrying a translation between city buildings."
+              ? "Brief worker carrying a private compilation between city buildings."
               : "Document worker waiting in the plaza."
           }
         >

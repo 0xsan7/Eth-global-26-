@@ -18,6 +18,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@briefmint/shared": ["../../src/lib/shared/briefs.ts"],
+      "@briefmint/arkiv/*": ["../../src/lib/arkiv/briefmint/*"],
       "@sudo-city/protocol": ["./src/vendor/protocol/index.ts"]
     },
     "types": ["vite/client"]

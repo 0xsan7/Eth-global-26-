@@ -1,6 +1,5 @@
-// Tool City demo domain: one fixed translation workshop, five city sites, and
-// a local job lifecycle. Nothing here performs network I/O; the UI is a
-// front-end demonstration of the contract described in common_project_structure.md.
+// Shared city geometry and legacy component types. The mounted BriefMint app uses
+// persisted API state and never imports the demo jobs below as live data.
 
 export type BuildingId = "registry" | "home" | "treasury" | "studio" | "archive";
 
@@ -118,9 +117,9 @@ export const BUILDINGS: BuildingDef[] = [
     id: "registry",
     name: "Registry Hall",
     short: "REG",
-    description: "Arkiv listing discovery. One supported workshop, one fixed quote.",
+    description: "Public Arkiv opportunity discovery and confirmed publication observation.",
     accent: "#f0b35c",
-    hint: "arkiv · rabdi",
+    hint: "arkiv · discovery",
     statLabel: "listing",
     statValue: "fresh",
     actionLabel: "Open workshop board",
@@ -129,45 +128,45 @@ export const BUILDINGS: BuildingDef[] = [
     id: "home",
     name: "Creator's Home",
     short: "HOME",
-    description: "Draft the source text. Locked once the job leaves this building.",
+    description: "Private notes and deliberate public parameters for a new opportunity.",
     accent: "#e8d6b0",
-    hint: "draft · source",
+    hint: "private · input",
     statLabel: "limit",
     statValue: "250 words",
     actionLabel: "Prepare draft",
   },
   {
     id: "treasury",
-    name: "Treasury",
-    short: "PAY",
-    description: "Whitechain test-USDT checkout. The server verifies the receipt.",
+    name: "Release Desk",
+    short: "REL",
+    description: "Review and approve the exact public revision before publishing.",
     accent: "#e58a64",
-    hint: "whitechain · 1874",
-    statLabel: "price",
-    statValue: "1.00 USDT",
-    actionLabel: "Verify payment",
+    hint: "review · approval",
+    statLabel: "revision",
+    statValue: "owner approved",
+    actionLabel: "Review public preview",
   },
   {
     id: "studio",
-    name: "Translation Studio",
+    name: "AI Studio",
     short: "0G",
-    description: "Private inference in the persistent Node runtime. Two attempts maximum.",
+    description: "0G private compilation with bounded attempts and saved evidence.",
     accent: "#5fd0bd",
     hint: "0g · private",
     statLabel: "attempts",
     statValue: "0 / 2",
-    actionLabel: "Run translation",
+    actionLabel: "Start compilation",
   },
   {
     id: "archive",
     name: "Archive",
     short: "ARC",
-    description: "Saved jobs, source-aligned edits, exports and settlement evidence.",
+    description: "Owner-only saved briefs, edits, private recovery and exports.",
     accent: "#8fb8d8",
-    hint: "jobs · exports",
+    hint: "private · recovery",
     statLabel: "saved",
-    statValue: "1 job",
-    actionLabel: "Review translation",
+    statValue: "owner only",
+    actionLabel: "Open saved brief",
   },
 ];
 

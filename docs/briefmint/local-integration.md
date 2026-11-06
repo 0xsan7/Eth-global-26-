@@ -1,6 +1,6 @@
 # BriefMint local integration runbook
 
-This runbook covers local backend work with the Vite city supplied by the teammate. The current backend checkout does not include `apps/web`, so it cannot start or verify the city itself. This is a local-only procedure: it does not call 0G, configure quota, contact Arkiv, deploy, or broadcast a transaction.
+This runbook covers the integrated Next backend and Vite city in this checkout. It is local-only: it does not call 0G, configure quota, contact Arkiv, deploy, or broadcast a transaction.
 
 ## Start the local API
 
@@ -25,13 +25,20 @@ Keep this process and its shell environment alive while exercising refresh/resta
 
 No 0G key, quota policy, `SESSION_SECRET` file, wallet key, Whitechain configuration, or Arkiv configuration is needed for auth and private persistence checks. Missing provider/quota should leave compilation unavailable and fail closed; do not count that as a successful compilation. Do not invoke the paid provider smoke from this runbook.
 
-## Connect the city when available
+## Start the city through its same-origin proxy
 
-The teammate starts Vite at `http://127.0.0.1:5173` and configures its `/api` proxy to forward unchanged to `http://127.0.0.1:4100`. Use relative `/api/...` requests with `credentials: 'same-origin'`. Preserve the browser `Origin` and `Set-Cookie`; do not call port 4100 directly from the browser, add credentialed cross-origin CORS, or mix `localhost` and `127.0.0.1`. The session cookie is host-only and should be stored against the browser origin.
+In a second terminal, start the already-configured Vite city:
+
+```sh
+cd "/Users/santiagojerald/Desktop/Eth Global/tool-city"
+npm run reference:dev -- --host 127.0.0.1 --port 5173
+```
+
+Vite forwards `/api` unchanged to `http://127.0.0.1:4100`. Use relative `/api/...` requests with `credentials: 'same-origin'`. Preserve the browser `Origin` and `Set-Cookie`; do not call port 4100 directly from the browser, add credentialed cross-origin CORS, or mix `localhost` and `127.0.0.1`. The session cookie is host-only and should be stored against the browser origin.
 
 The BriefMint challenge uses chain ID 7794095 for message sign-in. Authentication proves address control; it does not authorize compilation spend or Arkiv publication. Account changes must clear private UI/query caches and log out the previous session before authenticating the new account. Use synthetic harmless notes only.
 
-Because `apps/web` is absent from this checkout, successful backend HTTP smoke or adapter doubles do not establish the browser cookie/proxy flow. Record that integrated check as pending until the teammate's city is available and exercised against this API.
+The city is now API-wired and built, but a successful build does not establish a browser wallet/cookie journey. Record that integrated check as pending until it is exercised against this API. Do not set `VITE_ARKIV_ACCESS_KEY` for this local cookie check; without it the public reader and wallet-write controls remain visibly disabled.
 
 ## Production configuration remains a gate
 
