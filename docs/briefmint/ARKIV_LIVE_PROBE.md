@@ -1,6 +1,22 @@
 # Arkiv live browser probe — later human operator only
 
-This is a gated protocol for a later human operator. It is not authorization to execute it now. No BriefMint live record has been evidenced, and this document establishes no live browser, transaction, readback, filter, update, close, or expiry evidence. The earlier failed 0G inference probe does not authorize a new inference request or compilation. Complete Agent B's pending-signing fixes in [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md) before this journey.
+This is a human operator procedure, not evidence of a completed transaction. No BriefMint live publication is verified. Reuse the existing saved R2 draft; no new 0G request is needed or authorized. The integrated browser now checks approval/hash/account/chain, arms once before signing, and saves the RPC broadcast hash before the SDK waits for its receipt.
+
+## First publication on the integrated Next app
+
+1. Open `http://127.0.0.1:3001`, connect the existing owner wallet on **Rabdi 7794095**, and sign in. The wallet needs Rabdi **tGLM** for the transaction fee. Do not press Start Compilation.
+2. Open the saved R2 brief. At Release Desk, inspect every public field and approve its exact revision/hash. Remove private facts through the normal draft editor if necessary, then save and approve the new revision instead; never approve an unreviewed revision just to preserve the R2 label.
+3. At the publication panel, leave the optional access key empty for the public endpoint or supply the operator's public rate-limit key. Press **Sign publication (approved revision)** once and approve the MetaMask transaction. Wait for backend receipt/readback reconciliation to show `live`; record the entity key and transaction hash. If pending/unknown, use **Reconcile existing attempt**, never sign again.
+4. Open `/opportunities`, refresh, select the correct category and Open, and inspect the full record. Independently read it with the commands below; these commands do not use the app API, SQLite, cookies, wallet or 0G. For independence evidence, repeat after the operator stops the app server.
+
+```sh
+# Replace this placeholder with the confirmed public entity key.
+BRIEFMINT_ENTITY_KEY='0xREPLACE_WITH_CONFIRMED_ENTITY_KEY'
+node --import tsx scripts/briefmint-arkiv-reader.ts --get "$BRIEFMINT_ENTITY_KEY" --public-endpoint
+node --import tsx scripts/briefmint-arkiv-reader.ts --list --public-endpoint --status open --limit 20
+```
+
+5. For the later update transaction, edit public content, Save, approve the new revision, then **Sign update**. For close, change only Candidate status to Closed, Save, approve that exact revision, then **Sign closure**. Each requires a separate operator-approved transaction. Refresh both the selected record and indexed Open/Closed filters after each. Native expiry remains an unverified live gate; patching does not extend it.
 
 ## Preconditions
 

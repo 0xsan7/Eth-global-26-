@@ -41,32 +41,34 @@ export default function HomePage() {
   const [runError, setRunError] = useState<string | null>(null);
   const briefOperationEpoch = useRef(0);
   const previousBriefId = useRef<string | null | undefined>(undefined);
+  const opportunityReadEpoch = useRef(0);
+  const opportunityRowCount = useRef(0);
 
   const loadOpportunities = useCallback(async (filters: OpportunityFilters) => {
+    const epoch = ++opportunityReadEpoch.current;
     setOppLoading(true);
     setOppError(null);
     // Public discovery runs through the independent Arkiv reader: no backend
     // opportunities endpoint exists in the frozen contract.
     try {
       const list = await readOpportunitiesIndependent({ accessKey: "" }, filters);
-      setOpportunities((prev) => {
-        if (prev.length > 0) setOppStale(true);
-        return list;
-      });
+      if (epoch !== opportunityReadEpoch.current) return;
+      opportunityRowCount.current = list.length;
+      setOpportunities(list);
       setOppStale(false);
       setLastRefresh(new Date().toISOString());
       setSelectedKey((prev) => prev ?? list.find((o) => o.status === "open")?.entityKey ?? list[0]?.entityKey ?? null);
     } catch {
-      if (opportunities.length > 0) {
+      if (epoch !== opportunityReadEpoch.current) return;
+      if (opportunityRowCount.current > 0) {
         setOppStale(true);
         setOppError("Arkiv query failed — showing last confirmed list (stale). This does not mean records were withdrawn.");
       } else {
         setOppError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn or expired.");
       }
     } finally {
-      setOppLoading(false);
+      if (epoch === opportunityReadEpoch.current) setOppLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

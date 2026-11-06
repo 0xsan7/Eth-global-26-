@@ -70,5 +70,5 @@ export async function readOpportunityIndependent(
 ): Promise<OpportunityView | null> {
   const reader = createArkivBriefmintReader({ accessKey: config.accessKey.trim() });
   const record = await reader.get(entityKey);
-  return record ? toOpportunityView(record) : null;
+  return record && BigInt(record.expiresAtBlock) > BigInt(record.observedAtBlock) ? toOpportunityView(record) : null;
 }

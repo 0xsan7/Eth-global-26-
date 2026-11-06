@@ -2,8 +2,8 @@
 // Registry: real Arkiv opportunities through indexed queries.
 // Failed reads stay distinct from an empty catalogue; a failed refresh never
 // proves withdrawal or expiry. Closed records remain readable until expiry.
-// Text search filters client-side after the indexed fetch; category, status
-// and budget presence filter server-side through indexed fields.
+// Text search and budget presence filter client-side after the indexed fetch;
+// category and status filter server-side through indexed fields.
 import { useState } from "react";
 import type { OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 import { filterOpportunities } from "@/lib/shared/briefmint-validation";

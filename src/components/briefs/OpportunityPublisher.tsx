@@ -90,7 +90,6 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       if (pending && pending.intent.operation !== operation) {
         throw new Error("Resume the existing prepared publication operation first.");
       }
-      if (!accessKey.trim()) throw new Error("Enter an Arkiv access key to sign and read (a public rate-limit key; never committed).");
       if (typeof window === "undefined" || !(window as unknown as { ethereum?: EthereumProvider }).ethereum) {
         throw new Error("Install or unlock an EVM browser wallet first.");
       }
@@ -126,7 +125,10 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       let transactionHash: Hex;
       let entityKey: Hex | null;
       try {
-        const receipt = await writeArkivIntent(checkedIntent, accessKey.trim(), provider);
+        const receipt = await writeArkivIntent(checkedIntent, accessKey.trim(), provider, (hash) => {
+          storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash: hash, entityKey: checkedIntent.entityKey as Hex | null });
+          if (isCurrentSessionGeneration(generation)) setLastTx(hash);
+        });
         transactionHash = receipt.transactionHash as Hex;
         entityKey = receipt.entityKey as Hex;
       } catch (e) {
@@ -240,13 +242,13 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
         Signing wallet must be the project owner. Network: Arkiv Rabdi ({rpcLabel}). Once signing is armed, a declined or interrupted signature leaves the attempt locked until its outcome can be resolved.
       </p>
       <div className="form-field">
-        <label htmlFor="arkiv-access-key">Arkiv access key (public rate-limit key; never committed)</label>
+        <label htmlFor="arkiv-access-key">Arkiv access key (optional public rate-limit key; never committed)</label>
         <input
           id="arkiv-access-key"
           type="text"
           value={accessKey}
           onChange={(e) => setAccessKey(e.target.value)}
-          placeholder="Paste operator-provided key"
+          placeholder="Leave empty for the rate-limited public endpoint"
           autoComplete="off"
         />
       </div>
@@ -261,7 +263,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
           {confirmed.expiresAtBlock ? ` · expires at block ${confirmed.expiresAtBlock}` : ""}
         </p>
       )}
-      {lastTx && <p className="tc-mono tc-muted">Last submitted tx: {lastTx} (reconciled, not assumed)</p>}
+      {lastTx && <p className="tc-mono tc-muted">Broadcast tx: {lastTx} — confirmation status is shown above.</p>}
       {phase === "reconciling" && <p role="status">Reconciling on-chain entity with the backend…</p>}
       {phase === "pending" && <p role="status">Publication remains locked until the backend confirms its outcome.</p>}
       {error && <p className="error" role="alert">{error}</p>}
