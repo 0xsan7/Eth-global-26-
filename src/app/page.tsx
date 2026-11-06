@@ -148,14 +148,25 @@ export default function HomePage() {
   return (
     <AppShell>
       <div className="tc-page">
-        <h1>BriefMint — private notes to public opportunity</h1>
-        <p className="tc-muted">
-          Turn rough project notes into a reviewed brief and publish only the approved public fields as a
-          wallet-owned Arkiv opportunity. Compilation is quota-funded — no purchase, no bounty payout.
-        </p>
-        {briefConfigError && <p className="notice" role="status">{briefConfigError}</p>}
+        <section className="hero">
+          <div className="hero-copy">
+            <p className="eyebrow">Tool City · BriefMint</p>
+            <h1>Turn private notes into a public opportunity</h1>
+            <p className="hero-lede">
+              Write rough notes in private, compile them into a clear brief with 0G, approve exactly what goes
+              public, then publish it to Arkiv from your own wallet.
+            </p>
+          </div>
+          <ol className="steps" aria-label="How BriefMint works">
+            <li><span className="step-n">1</span><span><strong>Plan</strong>Private notes at the Planning Desk</span></li>
+            <li><span className="step-n">2</span><span><strong>Compile</strong>Private AI run at the AI Studio</span></li>
+            <li><span className="step-n">3</span><span><strong>Approve</strong>Exact public revision at the Release Desk</span></li>
+            <li><span className="step-n">4</span><span><strong>Publish</strong>Wallet-signed record at the Registry Hall</span></li>
+          </ol>
+        </section>
+        {briefConfigError && <p className="notice notice-warn" role="status">{briefConfigError} Saving, compiling and publishing are unavailable until the backend responds.</p>}
         {briefConfig && !briefConfig.ready && (
-          <p className="notice">BriefMint services are not fully ready — intake, compilation, or Arkiv may be unavailable. States below stay honest.</p>
+          <p className="notice notice-warn">Some BriefMint services are not ready: intake, compilation or Arkiv may be unavailable. Every state below stays honest.</p>
         )}
         <div className="city-layout">
           <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={brief?.executionStatus ?? null} />

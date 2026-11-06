@@ -179,24 +179,27 @@
 
 /* ---------- status card + dev fixture ---------- */
 .city-status {
-  margin-top: 0.45rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--tc-card, #fff);
-  border: 1px solid var(--tc-line, #d8c9a8);
-  border-radius: 8px;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--brand);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
 }
-.city-status .city-caption { margin: 0; color: #2e2a24; font-weight: 600; }
-.city-status-warn { border-left: 5px solid #c77d12; }
-.city-terms { margin: 0.25rem 0 0; font-size: 0.82rem; color: #5c564a; }
+.city-status .city-caption { margin: 0; color: var(--ink); font-weight: 700; }
+.city-status-warn { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.city-terms { margin: 0.3rem 0 0; font-size: 0.84rem; color: var(--ink-soft); }
 .city-fixture {
-  margin: 0 0 0.5rem;
-  padding: 0.35rem 0.6rem;
-  border: 2px dashed #a33327;
-  background: #fff4e5;
-  color: #5a1c14;
-  font-size: 0.85rem;
-  border-radius: 6px;
+  margin: 0 0 0.6rem;
+  padding: 0.45rem 0.75rem;
+  border: 2px dashed var(--danger);
+  background: var(--danger-soft);
+  color: var(--ink);
+  font-size: 0.86rem;
+  border-radius: 12px;
 }
+.city-fixture select { min-width: 10rem; padding: 0.3rem 2rem 0.3rem 0.6rem; margin-left: 0.4rem; }
 
 /* ---------- global motion switch ---------- */
 .city-scene[data-anim="paused"] *,

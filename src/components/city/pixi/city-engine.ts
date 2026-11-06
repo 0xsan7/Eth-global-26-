@@ -11,7 +11,7 @@ import { easeInOut, pathLength, pointAlong, streetRoute, walkDurationMs } from "
 
 export type MotionMode = "on" | "paused" | "off";
 
-const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+const FONT = "'Fredoka Variable', system-ui, -apple-system, 'Segoe UI', sans-serif";
 const INK = 0x3b2f22;
 const TAU = Math.PI * 2;
 const ISLAND = { x: 12, y: 30, w: 616, h: 354, r: 52 };
@@ -243,6 +243,8 @@ export class CityEngine {
   }
 
   static async create(host: HTMLElement): Promise<CityEngine> {
+    // Canvas text needs the web font loaded first; fall back silently if it is not.
+    await document.fonts?.load("600 13px 'Fredoka Variable'").catch(() => undefined);
     const app = new Application();
     await app.init({
       width: VIEWBOX.w,
