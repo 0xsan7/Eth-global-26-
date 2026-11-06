@@ -1,141 +1,104 @@
 // Typed BriefMint fetch wrapper — Agent B owned, client-safe.
-// Mirrors the legacy api-client envelope handling but targets the PROPOSED
-// BriefMint routes (PRD §11). Backend 503 means the new service is not
-// deployed yet: UI must render `unavailable`, never fixtures as live data.
-// 202 = in-progress (execution or chain confirmation); poll, don't assume.
+// Every call goes through the canonical `briefApi` registry in
+// ../shared/briefmint (frozen v1.2): method, path, request and response
+// shapes are validated with zod. Failures throw ApiError {status, code,
+// message, retryable}. 202 = in-progress (execution or chain confirmation);
+// poll, don't assume. Backend 503 = dependency unavailable (honest state).
 import {
-  BRIEFMINT_ROUTES,
-  type ApproveBriefRequest,
-  type BriefDetailResponse,
-  type BriefListResponse,
-  type BriefMintConfigResponse,
-  type CreateBriefRequest,
-  type OpportunityListResponse,
-  type PreparePublicationResponse,
-  type ReconcilePublicationRequest,
-  type SaveDraftRequest,
-} from "../shared/briefmint-api";
-import type { Hex, PrivateBrief } from "../shared/briefmint";
+  briefApi,
+  type BriefApiName,
+  type BriefApiRequest,
+  type BriefApiResponse,
+  type BriefView,
+  type PublicationIntent,
+} from "../shared/briefmint";
 
 export { ApiError, isApiError, queryKeys } from "./api-client";
 import { ApiError } from "./api-client";
 
-function codeForStatus(status: number): string {
-  switch (status) {
-    case 400:
-      return "BAD_INPUT";
-    case 401:
-      return "UNAUTHENTICATED";
-    case 403:
-      return "FORBIDDEN";
-    case 404:
-      return "NOT_FOUND";
-    case 409:
-      return "CONFLICT";
-    case 429:
-      return "QUOTA_EXHAUSTED";
-    case 502:
-      return "PROVIDER_FAILED";
-    case 503:
-      return "SERVICE_UNAVAILABLE";
-    default:
-      return "INTERNAL_ERROR";
-  }
+type Success<K extends BriefApiName> = Extract<BriefApiResponse<K>, { ok: true }>;
+
+function pathFor<K extends BriefApiName>(name: K, id?: string, query?: Record<string, string | undefined>): string {
+  const raw = briefApi[name].path.replace(":id", id ?? "");
+  if (!query) return raw;
+  const qs = Object.entries(query)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string)}`)
+    .join("&");
+  return qs ? `${raw}?${qs}` : raw;
 }
 
-async function parseJson(res: Response): Promise<unknown> {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-async function requestBriefmint<T>(path: string, init?: RequestInit): Promise<{ data: T; status: number }> {
+async function callBriefApi<K extends BriefApiName>(
+  name: K,
+  input: BriefApiRequest<K>,
+  options: { id?: string; query?: Record<string, string | undefined> } = {},
+): Promise<{ data: Success<K>["data"]; status: number }> {
+  const endpoint = briefApi[name];
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(pathFor(name, options.id, options.query), {
+      method: endpoint.method,
       credentials: "same-origin",
-      headers: { "content-type": "application/json", accept: "application/json", ...(init?.headers ?? {}) },
-      ...init,
+      headers: endpoint.method === "GET" ? { accept: "application/json" } : { "content-type": "application/json", accept: "application/json" },
+      body: endpoint.method === "GET" ? undefined : JSON.stringify(input),
     });
   } catch (e) {
     throw new ApiError(0, "NETWORK_ERROR", e instanceof Error ? e.message : "Network request failed.", true);
   }
-  const body = await parseJson(res);
-  const ok = res.status >= 200 && res.status < 300;
-  if (ok && body && typeof body === "object" && (body as { ok?: unknown }).ok === true) {
-    return { data: (body as { data: T }).data, status: res.status };
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch {
+    throw new ApiError(res.status, "BAD_RESPONSE", "BriefMint returned an unreadable response.", false);
   }
-  const err = body && typeof body === "object" && (body as { ok?: unknown }).ok === false
-    ? ((body as { error?: { code?: unknown; message?: unknown; retryable?: unknown } }).error ?? {})
-    : {};
-  throw new ApiError(
-    res.status,
-    typeof err.code === "string" ? err.code : codeForStatus(res.status),
-    typeof err.message === "string" ? err.message : `Request failed (${res.status}).`,
-    typeof err.retryable === "boolean" ? err.retryable : res.status === 502 || res.status === 503 || res.status === 429,
-  );
+  const parsed = endpoint.response.safeParse(json);
+  if (!parsed.success) {
+    throw new ApiError(res.status, "BAD_RESPONSE", "BriefMint returned an invalid response.", false);
+  }
+  if (!parsed.data.ok) {
+    const err = parsed.data.error;
+    throw new ApiError(res.status, err.code, err.message, err.retryable);
+  }
+  return { data: parsed.data.data as Success<K>["data"], status: res.status };
 }
 
-async function getBriefmint<T>(path: string): Promise<T> {
-  return (await requestBriefmint<T>(path, { method: "GET" })).data;
-}
-
-async function postBriefmint<T>(path: string, body?: unknown): Promise<{ data: T; status: number }> {
-  return requestBriefmint<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) });
-}
-
-async function putBriefmint<T>(path: string, body?: unknown): Promise<T> {
-  return (await requestBriefmint<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) })).data;
-}
-
-export type RunBriefResult = { brief: PrivateBrief; pending: boolean };
-export type ReconcileBriefResult = { brief: PrivateBrief; pending: boolean };
+export type RunBriefResult = { brief: BriefView; pending: boolean };
+export type ReconcileBriefResult = { brief: BriefView; pending: boolean };
 
 export const briefmintApi = {
-  config(): Promise<BriefMintConfigResponse> {
-    return getBriefmint<BriefMintConfigResponse>(BRIEFMINT_ROUTES.config);
+  config() {
+    return callBriefApi("config", {}).then((r) => r.data);
   },
-  listBriefs(): Promise<BriefListResponse> {
-    return getBriefmint<BriefListResponse>(BRIEFMINT_ROUTES.briefs);
+  listBriefs(beforeId?: string) {
+    return callBriefApi("list", {}, beforeId ? { query: { beforeId } } : {}).then((r) => r.data);
   },
-  createBrief(req: CreateBriefRequest): Promise<BriefDetailResponse> {
-    return postBriefmint<BriefDetailResponse>(BRIEFMINT_ROUTES.briefs, req).then((r) => r.data);
+  createBrief(req: BriefApiRequest<"create">) {
+    return callBriefApi("create", req).then((r) => r.data);
   },
-  getBrief(id: string): Promise<BriefDetailResponse> {
-    return getBriefmint<BriefDetailResponse>(BRIEFMINT_ROUTES.brief(id));
+  getBrief(id: string) {
+    return callBriefApi("get", {}, { id }).then((r) => r.data);
   },
   async runBrief(id: string): Promise<RunBriefResult> {
-    const r = await postBriefmint<PrivateBrief>(BRIEFMINT_ROUTES.run(id), {});
+    const r = await callBriefApi("run", {}, { id });
     return { brief: r.data, pending: r.status === 202 };
   },
-  saveDraft(id: string, req: SaveDraftRequest): Promise<BriefDetailResponse> {
-    return putBriefmint<BriefDetailResponse>(BRIEFMINT_ROUTES.draft(id), req);
+  saveDraft(id: string, req: BriefApiRequest<"saveDraft">) {
+    return callBriefApi("saveDraft", req, { id }).then((r) => r.data);
   },
-  approveBrief(id: string, req: ApproveBriefRequest): Promise<BriefDetailResponse> {
-    return postBriefmint<BriefDetailResponse>(BRIEFMINT_ROUTES.approve(id), req).then((r) => r.data);
+  approveBrief(id: string, req: BriefApiRequest<"approve">) {
+    return callBriefApi("approve", req, { id }).then((r) => r.data);
   },
-  preparePublication(id: string): Promise<PreparePublicationResponse> {
-    return postBriefmint<PreparePublicationResponse>(BRIEFMINT_ROUTES.preparePublication(id), {}).then((r) => r.data);
+  preparePublication(id: string, req: BriefApiRequest<"prepare">): Promise<PublicationIntent> {
+    return callBriefApi("prepare", req, { id }).then((r) => r.data);
   },
-  async reconcilePublication(id: string, req: ReconcilePublicationRequest): Promise<ReconcileBriefResult> {
-    const r = await postBriefmint<PrivateBrief>(BRIEFMINT_ROUTES.reconcilePublication(id), req);
+  async reconcilePublication(id: string, req: BriefApiRequest<"reconcile">): Promise<ReconcileBriefResult> {
+    const r = await callBriefApi("reconcile", req, { id });
     return { brief: r.data, pending: r.status === 202 };
   },
-  exportBrief(id: string): string {
-    return BRIEFMINT_ROUTES.exportBrief(id);
+  refreshPublication(id: string) {
+    return callBriefApi("refresh", {}, { id }).then((r) => r.data);
   },
-  listOpportunities(): Promise<OpportunityListResponse> {
-    return getBriefmint<OpportunityListResponse>(BRIEFMINT_ROUTES.opportunities);
-  },
-  updateOpportunityServerSide(): Promise<never> {
-    // Owner mutations are browser wallet-signed; there is no legacy server
-    // mutation endpoint to call. Kept explicit so callers don't invent one.
-    throw new ApiError(0, "BAD_INPUT", "Opportunity updates are wallet-signed from the browser.", false);
+  exportBrief(id: string, query: { format: "txt" | "json"; audience?: "private" | "public" }) {
+    return callBriefApi("export", query, { id }).then((r) => r.data);
   },
 };
-
-export type { Hex };
