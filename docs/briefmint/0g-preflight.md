@@ -1,3 +1,5 @@
+> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+
 # 0G first-request preflight
 
 Current operator-reported evidence and runtime command: [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md). The history below preserves the earlier preflight and HTTP 502 attempt; a later single standalone request succeeded with incomplete Router verification metadata.

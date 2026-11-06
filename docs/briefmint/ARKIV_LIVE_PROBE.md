@@ -1,3 +1,5 @@
+> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+
 # Arkiv live browser probe — later human operator only
 
 This is a human operator procedure, not evidence of a completed transaction. No BriefMint live publication is verified. Reuse the existing saved R2 draft; no new 0G request is needed or authorized. The integrated browser now checks approval/hash/account/chain, arms once before signing, and saves the RPC broadcast hash before the SDK waits for its receipt.

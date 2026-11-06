@@ -1,3 +1,5 @@
+> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+
 # BriefMint demo notes (2–3 minutes)
 
 Use a synthetic organizer brief and clearly say the content is synthetic. Do not show a real secret, private contact, API key, cookie, wallet signature, or personal source notes. The operator reports one successful standalone 0G smoke response (HTTP 200, valid structure), but no live BriefMint app generation, Arkiv record/lifecycle, production deployment, or independent response verification is established. Router verification/routing metadata was null and debit/credit source remain unknown. The prior HTTP 502 was overcome for that one request. Do not imply a bounty is funded or earned.

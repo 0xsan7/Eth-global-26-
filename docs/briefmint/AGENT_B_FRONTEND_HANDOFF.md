@@ -1,3 +1,5 @@
+> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+
 # BriefMint Agent B handoff (current implementation)
 
 This is a frontend integration handoff; the browser journey has not been exercised. The current React city calls the shared contract in `src/lib/shared/briefs.ts`; keep those DTOs authoritative. Root Next is the API on port 4100 and `apps/web` is the Vite browser on 5173. Agent B may edit `apps/web/src/{App,Root}.tsx`, `apps/web/src/lib/briefmint-api.ts`, city/HUD components, Vite config/package files as needed, and the browser adapter `src/lib/arkiv/briefmint/write.ts`. Coordinate root dependency changes with A. Backend `schema.ts`/`read.ts`, server/API, shared DTOs and migrations remain A-owned for this phase.
