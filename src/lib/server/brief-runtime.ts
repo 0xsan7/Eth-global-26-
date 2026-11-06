@@ -8,6 +8,19 @@ import { BriefPublicationService, type PublicationReader } from "./brief-publica
 import { getBriefQuotaPolicy, type QuotaPolicy } from "./quota";
 import { getServerEnv, type ServerEnv } from "./env";
 import type { Database } from "./db";
+import { createArkivBriefmintReader } from "../arkiv/briefmint/read";
+
+async function probeReader(reader?: Pick<PublicationReader, "readiness">): Promise<boolean> {
+  if (!reader) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.readiness ? reader.readiness() : Promise.resolve(true),
+      new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
+    ]);
+  } catch { return false; }
+  finally { if (timer) clearTimeout(timer); }
+}
 
 function configuration(env: ServerEnv | null, policy: QuotaPolicy | null, providerReady: boolean, arkivReady: boolean, now: number): BriefmintConfig {
   const auth = { available: env !== null, reason: env ? null : "Session configuration is unavailable." };
@@ -22,10 +35,17 @@ function configuration(env: ServerEnv | null, policy: QuotaPolicy | null, provid
       windowEndsAt: policy ? new Date(policy.windowEndsAt).toISOString() : null } });
 }
 /** Public readiness needs neither a database nor a working checkout. No secret values are returned. */
-export function getBriefPublicConfig(): BriefmintConfig {
+export async function getBriefPublicConfig(): Promise<BriefmintConfig> {
   let env: ServerEnv | null = null;
   try { env = getServerEnv(); } catch { /* Report session unavailability without exposing configuration. */ }
-  return configuration(env, getBriefQuotaPolicy(), !!env?.inferenceKey && !!env?.modelId, false, Date.now());
+  let arkivReady = false;
+  if (env?.arkivAccessKey) {
+    try { arkivReady = await probeReader(createArkivBriefmintReader({ accessKey: env.arkivAccessKey })); }
+    catch { /* An unavailable reader is not a positive readiness signal. */ }
+  }
+  let providerReady = false;
+  try { if (env) { createBriefInferenceProvider(env).assertReady(); providerReady = true; } } catch { /* Fail closed. */ }
+  return configuration(env, getBriefQuotaPolicy(), providerReady, arkivReady, Date.now());
 }
 export function createBriefRuntime(db: Database, env: ServerEnv, options: {
   provider?: BriefInferenceProvider; policy?: QuotaPolicy | null; reader?: PublicationReader; now?: () => number;
@@ -41,7 +61,7 @@ export function createBriefRuntime(db: Database, env: ServerEnv, options: {
     async config() {
       let providerReady = false; let readerReady = false;
       try { provider.assertReady(); providerReady = true; } catch { /* Fail closed. */ }
-      try { readerReady = !!options.reader && (!options.reader.readiness || await options.reader.readiness()); } catch { /* Fail closed. */ }
+      readerReady = await probeReader(options.reader);
       return configuration(env, policy, providerReady, readerReady, now());
     },
   };

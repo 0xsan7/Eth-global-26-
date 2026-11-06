@@ -19,14 +19,22 @@ function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid provider object");
   return value as Record<string, unknown>;
 }
+/** Check parsed strings, so JSON escaping cannot hide a credential echo before private storage or evidence. */
+function containsCredential(value: unknown, credential: string): boolean {
+  if (typeof value === "string") return value.includes(credential);
+  return value !== null && typeof value === "object" && Object.entries(value).some(([name, item]) => name.includes(credential) || containsCredential(item, credential));
+}
 
 export function createBriefInferenceProvider(env: BriefInferenceEnv, fetcher: typeof fetch = fetch, options: {
   maxTokens?: number; disableThinking?: boolean; jsonMode?: boolean;
 } = {}): BriefInferenceProvider {
   const maxTokens = options.maxTokens ?? 3000;
   const assertReady = () => {
-    if (!env.inferenceKey || !env.modelId) throw unavailable("Private brief inference is not configured.");
+    if (!env.inferenceKey || env.inferenceKey !== env.inferenceKey.trim() || /[\r\n]/.test(env.inferenceKey) || !env.modelId) throw unavailable("Private brief inference is not configured.");
     if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 3000) throw unavailable("Invalid inference output limit.");
+    if (!Number.isSafeInteger(env.inferenceTimeoutMs) || env.inferenceTimeoutMs < 1 || env.inferenceTimeoutMs > 180000) throw unavailable("Invalid inference timeout.");
+    try { const url = new URL(env.inferenceBaseUrl); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error(); }
+    catch { throw unavailable("Private inference requires a valid HTTPS endpoint."); }
   };
   return { assertReady, async compile(source, parameters, signal) {
     assertReady();
@@ -49,12 +57,15 @@ export function createBriefInferenceProvider(env: BriefInferenceEnv, fetcher: ty
       }
       const originalResponse = await readBoundedText(response.body, 100_000);
       const data = record(JSON.parse(originalResponse));
+      if (containsCredential(data, env.inferenceKey!) || containsCredential(response.headers.get("ZG-Res-Key"), env.inferenceKey!)) throw new Error("Credential echoed by provider");
+      if (data.model != null && data.model !== env.modelId) throw new Error("Provider returned another model");
       if (!Array.isArray(data.choices) || data.choices.length !== 1) throw new Error("Invalid choices");
       const choice = record(data.choices[0]);
       if (choice.finish_reason !== undefined && choice.finish_reason !== "stop") throw new Error("Incomplete output");
       const content = record(choice.message).content;
       if (typeof content !== "string" || new TextEncoder().encode(content).length > 32000) throw new Error("Invalid content");
       const result = validateModelResult(JSON.parse(content), source);
+      if (containsCredential(result, env.inferenceKey!)) throw new Error("Credential echoed in structured content");
       const trace = data.x_0g_trace === undefined ? {} : record(data.x_0g_trace);
       for (const key of ["trust_mode", "routing_tier"]) if (trace[key] !== undefined && trace[key] !== null && trace[key] !== "private") throw new Error("Weaker routing");
       if (trace.tee_verified !== undefined && trace.tee_verified !== null && trace.tee_verified !== true) throw new Error("Invalid verification");

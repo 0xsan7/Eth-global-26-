@@ -156,8 +156,8 @@ describe("BriefMint private 0G adapter with local fetch doubles", () => {
     expect(result.evidence).toMatchObject({ requestId: null, routerVerification: null, independentResponseVerification: "unavailable", checkedAt: null });
   });
   it("captures actual reported identifiers without asserting independent verification", async () => {
-    const output = await provider(async () => response(model, { request_id: "actual-test-request", trust_mode: "private", provider_address: owner, tee_verified: true }, { id: "completion-id", model: "returned-model" })).compile(source, parameters);
-    expect(output.evidence).toMatchObject({ requestId: "actual-test-request", modelId: "returned-model", providerId: owner, routerVerification: true, independentResponseVerification: "unavailable" });
+    const output = await provider(async () => response(model, { request_id: "actual-test-request", trust_mode: "private", provider_address: owner, tee_verified: true }, { id: "completion-id", model: env.modelId })).compile(source, parameters);
+    expect(output.evidence).toMatchObject({ requestId: "actual-test-request", modelId: env.modelId, providerId: owner, routerVerification: true, independentResponseVerification: "unavailable" });
   });
   it("rejects malformed, truncated, oversized and source-invalid responses", async () => {
     const cases = [
@@ -166,6 +166,7 @@ describe("BriefMint private 0G adapter with local fetch doubles", () => {
       () => response({ ...model, deliverables: [{ text: "x".repeat(501), sourceIds: ["seg_001"], basis: "provided" }] }),
       () => response(model, undefined, { choices: [{ message: { content: JSON.stringify(model) }, finish_reason: "length" }] }),
       () => new Response("x".repeat(100001)),
+      () => response(model, undefined, { model: "unrequested-model" }),
     ];
     for (const makeResponse of cases) await expect(provider(async () => makeResponse()).compile(source, parameters)).rejects.toMatchObject({ code: "PROVIDER_FAILED" });
   });
@@ -181,5 +182,27 @@ describe("BriefMint private 0G adapter with local fetch doubles", () => {
     await expect(missing.compile(source, parameters)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" }); expect(calls).toBe(0);
     await expect(provider(async () => new Response("sensitive error detail", { status: 503 })).compile(source, parameters)).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", retryable: true, message: "Private brief provider could not complete the request." });
     await expect(provider(async () => new Response("sensitive error detail", { status: 401 })).compile(source, parameters)).rejects.toMatchObject({ code: "PROVIDER_FAILED", retryable: false });
+  });
+  it("rejects credential echoes before evidence or original bytes can be stored", async () => {
+    for (const key of [env.inferenceKey!, 'synthetic-"quoted\\key']) {
+      for (const make of [
+        () => response(model, { request_id: key }),
+        () => response(model, { provider: key }),
+        () => response(model, { [key]: "synthetic credential as property name" }),
+        () => response({ ...model, exclusions: [{ text: key, sourceIds: [], basis: "suggested" }] }),
+        () => { const res = response(); res.headers.set("ZG-Res-Key", key); return res; },
+      ]) {
+        const adapter = createBriefInferenceProvider({ ...env, inferenceKey: key }, (async () => make()) as typeof fetch);
+        await expect(adapter.compile(source, parameters)).rejects.toMatchObject({ code: "PROVIDER_FAILED", message: "Private brief provider returned an invalid or unverified result." });
+      }
+    }
+  });
+  it("rejects unsafe endpoint and timeout configuration before dispatch", async () => {
+    let calls = 0;
+    for (const patch of [{ inferenceBaseUrl: "http://provider.invalid" }, { inferenceBaseUrl: "https://user:pass@provider.invalid" }, { inferenceBaseUrl: "https://provider.invalid?token=x" }, { inferenceTimeoutMs: 180001 }]) {
+      const adapter = createBriefInferenceProvider({ ...env, ...patch }, (async () => { calls++; return response(); }) as typeof fetch);
+      await expect(adapter.compile(source, parameters)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    }
+    expect(calls).toBe(0);
   });
 });

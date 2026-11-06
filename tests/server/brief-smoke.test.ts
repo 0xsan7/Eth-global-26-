@@ -69,6 +69,7 @@ describe("guarded 0G smoke — injected network only", () => {
     expect(report).toMatchObject({ status: "completed", inferenceRequests: 1, latencyMs: 25, structuredResponseValid: true,
       requestId: "router-real-test-double", returnedModel: SMOKE_MODEL_ID, providerId: `0x${"1".repeat(40)}`,
       routerVerification: true, independentResponseVerification: "unavailable", responseReference: "signature-reference-test-double",
+      creditSource: "unverified", promotionalCreditDebit: { status: "not_measured", before: null, after: null, debit: null },
       reportedTokens: { prompt: 100, completion: 200, total: 300 }, routerReportedBillingNeurons: { total: "30" } });
     expect(test.lines.join("\n")).not.toMatch(/synthetic-credential|Authorization|sample folders/);
   });
@@ -83,12 +84,22 @@ describe("guarded 0G smoke — injected network only", () => {
     const test = setup({ completion: () => reply({ choices: [{ message: { content: '{"deliverables":[]}' } }] }) });
     expect(await test.run()).toBe(1); expect(test.requests).toHaveLength(2); expect(test.lines).toEqual([]);
     expect(JSON.parse(test.errors[0])).toMatchObject({ code: "PROVIDER_FAILED", inferenceRequests: 1, mayHaveBeenBilled: true, automaticRetry: false });
+    expect(JSON.parse(test.errors[0]).providerMetadata).toMatchObject({ requestId: "router-real-test-double", modelId: SMOKE_MODEL_ID, providerId: `0x${"1".repeat(40)}` });
+  });
+  it("bounds oversized successful and error bodies without retrying or logging response text", async () => {
+    for (const status of [200, 502]) {
+      const test = setup({ completion: () => new Response("SYNTHETIC_PRIVATE_CANARY".repeat(5000), { status }) });
+      expect(await test.run()).toBe(1);
+      expect(test.requests).toHaveLength(2); expect(test.lines).toEqual([]);
+      expect(test.errors.join("\n")).not.toContain("SYNTHETIC_PRIVATE_CANARY");
+      expect(JSON.parse(test.errors[0])).toMatchObject({ httpStatus: status, inferenceRequests: 1, automaticRetry: false });
+    }
   });
   it.each([syntheticKey, 'synthetic-"quoted\\credential'])("does not log credentials even if a provider echoes them in metadata", async key => {
     const test = setup({ completion: () => reply({ x_0g_trace: { request_id: key, provider: "provider", tee_verified: true } }) });
     expect(await test.run([flag], { NODE_ENV: "test", ZERO_G_API_KEY: key })).toBe(1); expect(test.lines).toEqual([]);
     expect(test.errors.join("\n")).not.toContain(key);
-    expect(JSON.parse(test.errors[0]).code).toBe("METADATA_REDACTED");
+    expect(JSON.parse(test.errors[0]).code).toBe("PROVIDER_FAILED"); // The adapter rejects the echo before producing evidence.
   });
   it.each([503, 302])("does not retry or follow an inference HTTP %i", async status => {
     const test = setup({ completion: () => new Response("sensitive upstream details", { status, headers: { Location: "https://other.invalid" } }) });

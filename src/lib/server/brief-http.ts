@@ -35,7 +35,7 @@ export async function handleBrief(action: BriefApiName, request: Request, id?: s
     if (request.method !== "GET" && Object.keys(params).length) throw badInput();
     if (action === "config") {
       endpoint.request.parse(params);
-      const data = injected ? await injected.config() : getBriefPublicConfig();
+      const data = injected ? await injected.config() : await getBriefPublicConfig();
       try { endpoint.response.parse({ ok: true, data }); } catch { throw new ServiceError("INTERNAL_ERROR", 500, "Request could not be completed."); }
       return json(data);
     }

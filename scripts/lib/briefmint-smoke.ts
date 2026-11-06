@@ -8,6 +8,8 @@ export const SMOKE_BASE_URL = "https://router-api.0g.ai/v1";
 const LIVE_FLAG = "--authorize-paid-inference";
 const MAX_TOKENS = 1200;
 type SafeRouterError = { type: string | null; code: string | null; requestId: string | null };
+type SafeResponseMetadata = { requestId: string | null; modelId: string | null; providerId: string | null; routingTier: string | null; routerVerification: boolean | null };
+const creditMeasurement = { creditSource: "unverified", promotionalCreditDebit: { status: "not_measured", before: null, after: null, debit: null } } as const;
 class SmokeFailure extends Error {
   constructor(readonly code: string) { super(code); }
 }
@@ -47,12 +49,24 @@ async function safeRouterError(response: Response, credential?: string): Promise
   const failure: SafeRouterError = { type: null, code: null,
     requestId: safeToken(response.headers.get("x-request-id") ?? response.headers.get("x-0g-request-id"), credential) };
   try {
-    const body = JSON.parse(await readBoundedText(response.clone().body, 16000));
+    const body = JSON.parse(await readBoundedText(response.body, 16000));
     failure.type = safeToken(body?.error?.type, credential);
     failure.code = safeToken(body?.error?.code, credential);
     failure.requestId ??= safeToken(body?.request_id ?? body?.x_0g_trace?.request_id, credential);
   } catch { /* Never replace the provider's original response/error with diagnostic parsing. */ }
   return failure;
+}
+function safeResponseMetadata(response: Response, raw: string, credential?: string): SafeResponseMetadata {
+  const metadata: SafeResponseMetadata = { requestId: safeToken(response.headers.get("x-request-id") ?? response.headers.get("x-0g-request-id"), credential), modelId: null, providerId: null, routingTier: null, routerVerification: null };
+  try {
+    const body = JSON.parse(raw);
+    metadata.requestId ??= safeToken(body?.x_0g_trace?.request_id ?? body?.id, credential);
+    metadata.modelId = safeToken(body?.model, credential);
+    metadata.providerId = safeToken(body?.x_0g_trace?.provider_address ?? body?.x_0g_trace?.provider, credential);
+    metadata.routingTier = safeToken(body?.x_0g_trace?.trust_mode ?? body?.x_0g_trace?.routing_tier, credential);
+    metadata.routerVerification = typeof body?.x_0g_trace?.tee_verified === "boolean" ? body.x_0g_trace.tee_verified : null;
+  } catch { /* Malformed response diagnostics must remain bounded and content-free. */ }
+  return metadata;
 }
 /** No file/env loader, database, wallet, payment or Arkiv imports. Native fetch has no retry policy. */
 export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, io: {
@@ -65,6 +79,7 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
   let config: BriefInferenceEnv | undefined; let phase = "configuration";
   let inferenceRequests = 0; let inferenceStart: number | null = null; let httpStatus: number | null = null;
   let routerError: SafeRouterError | null = null;
+  let providerMetadata: SafeResponseMetadata | null = null;
   const duration = (start: number) => Math.max(0, Math.round(clock() - start));
   try {
     config = settings(env);
@@ -102,6 +117,14 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
       const actual = await fetcher(url, { ...init, redirect: "error" });
       httpStatus = actual.status;
       if (!actual.ok) routerError = await safeRouterError(actual, config?.inferenceKey);
+      else {
+        // Consume once: cancelling an oversized cloned stream can wait forever for its unread twin.
+        let raw: string;
+        try { raw = await readBoundedText(actual.body, 100000); }
+        catch { throw new SmokeFailure("PROVIDER_FAILED"); }
+        providerMetadata = safeResponseMetadata(actual, raw, config?.inferenceKey);
+        return new Response(raw, { status: actual.status, headers: actual.headers });
+      }
       return actual;
     };
     const provider = createBriefInferenceProvider(config, singleRequestFetch, { maxTokens: MAX_TOKENS, disableThinking: true, jsonMode: true });
@@ -116,7 +139,8 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
       inferenceRequests, latencyMs: duration(inferenceStart), httpStatus, structuredResponseValid: true,
       requestId: evidence.requestId, returnedModel: evidence.modelId, providerId: evidence.providerId, routingTier: evidence.routingTier,
       routerVerification: evidence.routerVerification, independentResponseVerification: evidence.independentResponseVerification,
-      responseReference: evidence.responseReference, ...usage(originalResponse) };
+      independentVerificationReason: "Provider signature, chain-registered signer and signed-content comparison are not implemented by this probe.",
+      responseReference: evidence.responseReference, automaticRetry: false, mayHaveBeenBilled: true, ...creditMeasurement, ...usage(originalResponse) };
     // Even an accidentally echoed credential in provider metadata must never reach logs.
     if (config.inferenceKey && containsCredential(report, config.inferenceKey)) throw new SmokeFailure("METADATA_REDACTED");
     io.log(JSON.stringify(report)); return complete ? 0 : 1;
@@ -124,11 +148,11 @@ export async function runBriefmintSmoke(args: string[], env: NodeJS.ProcessEnv, 
     const allowed = ["CONFIGURATION_INVALID", "API_KEY_NOT_CONFIGURED", "CATALOG_UNAVAILABLE", "CATALOG_INCOMPATIBLE", "REQUEST_BOUNDARY_VIOLATION", "METADATA_REDACTED", "PROVIDER_UNAVAILABLE", "PROVIDER_FAILED", "EXECUTION_INTERRUPTED"];
     const candidate = error instanceof Error && "code" in error ? String(error.code) : "";
     const code = allowed.includes(candidate) ? candidate : phase === "catalog" ? "CATALOG_UNAVAILABLE" : "PREFLIGHT_FAILED";
-    const report = { status: "failed", phase, code, inferenceRequests, httpStatus, routerError,
+    const report = { status: "failed", phase, code, inferenceRequests, httpStatus, routerError, providerMetadata,
       latencyMs: inferenceStart === null ? null : duration(inferenceStart),
-      mayHaveBeenBilled: inferenceRequests > 0, automaticRetry: false };
+      mayHaveBeenBilled: inferenceRequests > 0, automaticRetry: false, ...creditMeasurement };
     if (!config?.inferenceKey || !containsCredential(report, config.inferenceKey)) io.error(JSON.stringify(report));
-    else io.error(JSON.stringify({ ...report, routerError: null, code: "METADATA_REDACTED" }));
+    else io.error(JSON.stringify({ ...report, routerError: null, providerMetadata: null, code: "METADATA_REDACTED" }));
     return 1;
   }
 }

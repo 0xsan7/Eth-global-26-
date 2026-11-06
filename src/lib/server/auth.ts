@@ -40,6 +40,11 @@ export class AuthService {
     if (typeof challengeId !== "string" || !/^[a-f0-9]{48}$/.test(challengeId) || typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature) || signature.length > 4096) throw badInput();
     const row = this.db.prepare("SELECT * FROM auth_challenges WHERE id=?").get(challengeId) as { address: Address; message: string; expires_at: number; consumed_at: number | null } | undefined;
     if (!row || row.consumed_at !== null || row.expires_at <= this.now()) throw new ServiceError("UNAUTHENTICATED", 401, "Challenge is invalid or expired.");
+    // Check the actual SIWE domain and URI fields, not a substring of the signed text.
+    // A challenge persisted before an origin change must not authenticate the new origin.
+    const lines = row.message.split("\n");
+    if (lines[0] !== `${new URL(this.env.appOrigin).host} wants you to sign in with your Ethereum account:`
+      || lines[5] !== `URI: ${this.env.appOrigin}`) throw new ServiceError("UNAUTHENTICATED", 401, "Challenge is invalid or expired.");
     let valid = false;
     try { valid = await verifyMessage({ address: row.address, message: row.message, signature: signature as Hex }); } catch { /* Invalid signatures are authentication failures. */ }
     if (!valid) throw new ServiceError("UNAUTHENTICATED", 401, "Signature is invalid.");
