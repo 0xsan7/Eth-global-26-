@@ -1,0 +1,105 @@
+# BriefMint implementation contract — v1
+
+Authority: the user-approved `BriefMint-PRD.md` and `BriefMint-Mind-Map.opml` in the parent `Eth Global` directory, read completely for this foundation. They supersede the old translation product plan for BriefMint. Legacy translation/payment behavior remains intact. This document freezes implementation choices left open by the PRD; it does not claim the workflow is implemented.
+
+## Foundation and inspected state
+
+Starting branch: `codex/payment-backend`, clean at `4f2f4d17c92ea7b3996ffefe7c5ae5e4e406b307`. Inspected actual auth, HTTP, database/migration, runtime, shared validation, existing tests and package configuration. Frontend reference: locally recorded `origin/feat/tool-city-workshop-ui` at `cb0db61d3515ee0621547f7832e9826f4be08f2e`, inspected through Git objects, not merged. Its Vite app proxies to port 4100 and currently fabricates translations/payment state. No `apps/web` changes in this foundation.
+
+Implemented here: `src/lib/shared/briefs.ts`, executable contract tests, this integration contract. No BriefMint HTTP handlers, migrations, auth-policy activation, provider calls, browser writes or deployment are implemented yet. Both agents import the shared module; neither copies its DTOs. Existing `api.ts`, `domain.ts`, `/api/jobs`, checkout configuration and historical tables are unchanged.
+
+## API freeze
+
+`briefApi` is the canonical registry of method, path, strict request schema and strict response-envelope schema. `BriefApiRequest<K>` and `BriefApiResponse<K>` infer exact types from it. Dates are UTC ISO with milliseconds and `Z`; hashes/IDs are lowercase `0x` plus 64 hex characters; block numbers are unsigned decimal strings; monetary amounts are safe integer USD cents. Nullable fields must be explicit `null`, not missing. No query/body coercion; reject unknown fields, duplicate query keys, malformed JSON and bodies over 32,000 bytes before parsing. No caller-supplied owner, model, quota, paid state or evidence.
+
+| Key | Method / path | Input | Success data / HTTP |
+|---|---|---|---|
+| config | GET `/api/briefmint/config` | No query | `BriefmintConfig`, 200 |
+| list | GET `/api/briefs` | Optional `beforeId` | `{briefs, nextBeforeId}`, 200 |
+| create | POST `/api/briefs` | `{notes, publicParameters}` | `BriefView`, 201 |
+| get | GET `/api/briefs/:id` | No query | `BriefView`, 200 |
+| run | POST `/api/briefs/:id/run` | `{}` | `BriefView`, 200 ready / 202 running |
+| saveDraft | PUT `/api/briefs/:id/draft` | `{expectedRevision, draft}` | `BriefView`, 200 |
+| approve | POST `/api/briefs/:id/approve` | `{expectedRevision, publicPayloadHash}` | `BriefView`, 200 |
+| prepare | POST `/api/briefs/:id/publication/prepare` | `{intentId, expectedRevision, publicPayloadHash, operation}` | `PublicationIntent`, 200 |
+| reconcile | POST `/api/briefs/:id/publication/reconcile` | `{intentId, transactionHash, entityKey}` | `BriefView`, 200 settled / 202 unresolved |
+| export | GET `/api/briefs/:id/export` | Required `format=txt` or `format=json` | `{filename, mediaType, content}`, 200 |
+
+All JSON uses existing `{ok:true,data}` / `{ok:false,error:{code,message,retryable}}` envelope and `Cache-Control: no-store`. Export also uses the envelope; browser creates a download Blob from `content`. JSON export serializes the saved private `BriefView`; TXT includes labelled private source, original result, saved edits and evidence. It never dispatches. Public export serializes only the preview's `PublicOpportunity`.
+
+List returns at most 50 summaries ordered `(createdAt DESC, id DESC)`. `beforeId` is an owner-bound cursor resolved to that tuple; missing/wrong-owner cursor returns 404. Detail retains original intake parameters and input separately from edited candidate parameters.
+
+Errors: 400 `BAD_INPUT`; 401 `UNAUTHENTICATED`; 403 `FORBIDDEN` origin; 404 `NOT_FOUND` for absent and wrong-owner private IDs alike; 409 `REVISION_CONFLICT`, `BRIEF_NOT_READY`, `APPROVAL_REQUIRED`, `PAYLOAD_MISMATCH`, `PUBLICATION_CONFLICT`, `RETRY_NOT_ALLOWED`; 429 `QUOTA_EXHAUSTED`; 502 `PROVIDER_FAILED`; 503 `SERVICE_UNAVAILABLE`, `PROVIDER_UNAVAILABLE`, `ARKIV_UNAVAILABLE`; 500 sanitized `INTERNAL_ERROR`. Zod errors map to 400 without echoing private values. `BriefContractConflict` maps to 409. Never expose raw RPC/provider errors. Read errors must not masquerade as empty lists.
+
+## Public bytes and approval
+
+`projectPublicOpportunity` is the only public projection. Schema version 1 and namespace `tool-city.opportunity.v1`; exact keys are defined in `publicOpportunitySchema`. Public sections are plain strings, never model items with source IDs. Budget is explicitly unfunded and nullable. Ownership comes from Arkiv system fields, never a payload claim. `status` (`open`/`closed`) is included in the approved payload so closing also requires explicit approval. No private record ID, source hash, prompt or verification evidence goes onchain.
+
+Limits frozen for v1: notes 250 words / 5,000 characters / 20 paragraphs; title 120 characters; summary 1,000; each section at most 12 items of 500 characters; deliverables and acceptance criteria nonempty; contact HTTPS without embedded credentials. Public payload at most 16,000 UTF-8 bytes. These are application bounds, not a claim of tested network capacity. Strict schema validation cannot redact sensitive facts within approved text: humans must inspect the preview.
+
+`canonicalPublicJson` sorts object keys lexicographically, preserves array order and exact strings, includes explicit nulls, and JSON-encodes without whitespace. No Unicode normalization. `hashPublicOpportunity` uses SHA-256 over those UTF-8 bytes, lowercase `0x` digest. Both browser and server use this helper, not SDK JSON or a private-source hash. Tests include exact canonical bytes and an independent Node SHA-256 comparison. SDK stores the exact canonical JSON string as the content column.
+
+Revision starts at 1 on intake. First validated model result creates a candidate and increments revision; each saved edit increments once, even if the submitted candidate happens to be identical. Input is immutable; changed notes create another brief. Model result is immutable after first success. Draft edits only in ready state, full candidate replacement with compare-and-swap `expectedRevision`; reject stale saves. Saving always clears current approval, never an already recorded publication intent.
+
+Approve recomputes server projection/hash using `validateBriefApproval`, requires ready and expected revision, then persists owner, revision, hash, canonical approved snapshot and timestamp. `validatePublicationApproval` checks current owner approval and snapshot before preparing. Hash calculation is asynchronous: do not hold a synchronous SQLite transaction across an `await`. Compute from a snapshot, then use an immediate transaction to recheck the revision/state/hash and persist atomically. Schema parsing alone does not verify hashes; the async semantic helpers are mandatory at these boundaries.
+
+`assertBriefDeadline` is called on create/save/approve/prepare using server time: future and within seven days. Historical reads and reconciliation do not reapply that temporal validity rule. Closing an already expired entity is not supported. A closed record cannot reopen in this MVP. Changing a deadline on update requires matching native expiry behavior; refuse an unsupported expiry change, do not claim it was applied.
+
+## Independent state and publication protocol
+
+Execution: draft/running/ready/failed/interrupted. Review: unreviewed/approved. Publication: unpublished/pending/live/closed/expired. Freshness: fresh/stale/unavailable. `confirmed` retains last actual chain observation while `pending` retains an immutable intent plus optional transaction. RPC failures change freshness, not last confirmed lifecycle. Current private revision and confirmed public revision may differ.
+
+1. Browser generates a random 32-byte `intentId` for an explicit publish action. A's prepare endpoint checks owner/session, ready/current approval, payload hash, chain readiness, deadline and no conflicting outstanding intent. Same ID plus same request returns the persisted intent; same ID/different request conflicts. Enforce unique intent ID and at most one unresolved intent per brief in storage.
+2. Create requires no existing entity. Update/close requires a fresh independently read existing entity owned by the same session wallet. Compare its payload hash with the last confirmed base. An external change causes `PUBLICATION_CONFLICT`, refreshes evidence and requires explicit user resolution; never silently overwrite it. Close requires a saved, approved candidate with status closed and otherwise identical public content to the confirmed payload (apart from revision/status). Update requires open content and a live entity. No replacement create while existence/broadcast is uncertain.
+3. Persist `PublicationIntent` BEFORE handing it to the browser: operation, chain, owner, target/base hash, exact approved payload/hash, absolute expiry block and creation time. A derives expiry from actual network data; B converts that fixed block to the installed SDK's expiry representation. Do not send a `BriefView` to a write helper. Validate intent hash with `validatePublicationIntent` before signing and during reconciliation.
+4. B verifies connected account matches intent owner and chain is 7794095. It displays exact payload, then signs with the browser wallet. B uses SDK create/patch (and expiry mutation if needed), never a server owner key. Writes use readonly=false and permissionlessExtension=false. Refresh the base entity immediately before update/close; this narrows but does not eliminate an external-write race. No assertion of atomic chain compare-and-swap without SDK/network proof.
+5. Browser submits actual transaction/entity hints to reconcile. Both nullable fields permit recovering a known intent after reload; null is unknown, never cancellation proof. A uses the injected neutral reader to verify network, receipt success, signer, affected entity, system owner, namespace, exact canonical payload/hash/revision, indexed attributes and actual expiry block. A does not trust the hints. Reverted receipts terminate intent while retaining prior confirmed state. Pending or unknown observations return 202; RPC failure is 503 with stored freshness updated.
+6. Exact approved intent is the comparison target even after newer private edits. Record an older approved public revision without rewriting the newer draft. Do not re-run current approval validation when reconciling a legitimately broadcast old intent. A changed/externally modified entity must be reported, not credited as matching publication.
+7. Wallet rejection before submission does not prove absence of a broadcast to the backend. Keep the prepared intent available for retry; do not create another. B must persist non-sensitive pending intent/transaction identifiers locally before reporting success, and surface SDK errors that contain a transaction hash as uncertain broadcasts. If broadcast outcome is unknown, reconcile before any resend; do not promise exactly-once creation. A later recovery/cancellation UX cannot discard uncertainty without chain evidence. This conservative limitation may temporarily block publishing a newly edited revision while an old intent is unresolved.
+
+Native expiry and business deadline differ: observe real expiry block; additionally exclude past-deadline entities from open discovery. A missing record alone is not expiry proof. Use previously observed expiry plus a current chain block; otherwise return unavailable/unknown and retain evidence. Expiry cannot erase public copies.
+
+## Arkiv adapter boundary
+
+B owns `src/lib/arkiv/briefmint/{schema,read,write}.ts`. Implement exported `BriefmintArkivReader` / `BriefmintArkivWriter` contracts from shared module. `read.ts` is Node/browser-neutral, accepts RPC configuration explicitly, imports no React, wallet hooks, server modules or environment secrets. A injects it into `brief-publication.ts`; it must fail closed until installed. SDK bigint stays inside adapters and becomes decimal JSON strings. Normal successful absent entity returns null; failed RPC throws a sanitized typed error. `transaction()` reads real chain/receipt data, never infers success from a hash.
+
+Installed package inspected: `@arkiv-network/sdk` 1.0.1. It exposes schema/value-based create, patch operations, selected system fields and block expiry. Do not paste obsolete raw-payload API examples. B's schema contains required indexed namespace, schemaVersion, category, language, status, budgetPresent (boolean), budgetUsdCents (integer, zero when absent), deadlineUnixSeconds (integer) and unindexed `content` (canonical public JSON). Null budget remains null inside content; `budgetPresent` disambiguates indexed zero. Select actual system owner/key/expiry and validate all index values against content. `opportunityFilterSchema` defines query inputs; execute applicable filters on Arkiv, always include namespace/version and deadline, use the SDK cursor internally. B must demonstrate supported indexing/size/expiry on Rabdi before claiming live readiness.
+
+Independent reader accepts its own RPC configuration and uses this same read adapter without private API/session access. It displays actual owner and treats all public text as untrusted. Safe text rendering and `noopener noreferrer` for contact links; no model-generated executable HTML. Adapter availability and real live reads/writes remain unproven in this foundation.
+
+## Auth policy (frozen, activation is Agent A's next work)
+
+Preserve existing `/api/auth/*` paths. BriefMint requests `GET /api/auth/challenge?address=...&purpose=briefmint`, validated by `briefmintAuthChallengeQuerySchema`. Missing purpose retains legacy challenge chain 1874; unsupported purpose is 400. BriefMint challenge embeds chain 7794095 and “Sign in to BriefMint. This is not a payment or publication authorization.” Server selects the chain from purpose; never accept arbitrary chainId. Verify signs the exact persisted nonce/domain/URI/chain/expiry message, not reconstructed browser content. Sign-in is an EOA message signature and spends no gas. It does not authorize Arkiv writes or require Whitechain funding.
+
+Use existing HttpOnly `tool_city_session` cookie and server-derived EOA identity across both product modes; a session proves control of an address, not a spending entitlement or permanently selected wallet chain. Existing sessions can own briefs after rollout. Purpose needs no separate entitlement claim: legacy run still independently verifies payment, BriefMint run independently reserves quota. New auth tests must prove both purpose choices, replay/expiry denial and unchanged legacy default. The hardcoded 1874 auth implementation is deliberately not activated/changed by this contract-only foundation.
+
+Before every write B checks chain/account again. Account change clears all private UI/query caches, logs out the old session, then obtains a new signature. Network change alone does not alter session identity. No smart-contract wallet support in MVP. User still selects the existing account before live writes; no wallet setup or account changes here.
+
+## Vite + Next integration and deployment
+
+Keep both existing applications. Next is the Node 24 API service; Vite owns the city. No rewrite/move of `apps/web` into Next. Keep its separate package/lockfile for this sprint; A alone owns root dependencies/lockfile. B imports shared contract via relative path or explicit `@briefmint/shared` alias pointing to root `src/lib/shared` (never reuse Vite `@`, which already means its own `src`). Root dependency resolution supplies pinned Zod; no duplicate DTO module. B configures Vite filesystem allowance for that exact shared source and verifies its TypeScript build.
+
+Development canonical browser URL: `http://127.0.0.1:5173`. API: `npm run dev -- --hostname 127.0.0.1 --port 4100` at root. Privately configure `APP_ORIGIN=http://127.0.0.1:5173`; allowed origins only that origin for the city. Existing Vite `/api` proxy preserves `/api` and browser Origin, targets `http://127.0.0.1:4100`. Use relative fetch URLs with `credentials: 'same-origin'`; browser stores proxied Set-Cookie on its own host. Do not mix localhost and 127.0.0.1 or fetch port 4100 directly. All auth paths are `/api/auth/*`; `/auth` and `/health` reference proxies are not real API contracts and must not be relied on.
+
+Production: one public HTTPS origin and reverse proxy. `/api/*` forwards unchanged to one persistent Node 24 Next instance on private port 4100; `/` serves B's built `apps/web/dist`, with SPA fallback only outside `/api`. API errors must never receive index.html. Forward Cookie/Set-Cookie and original Origin without rewriting to an internal origin; no permissive credentialed CORS. `APP_ORIGIN` is the external HTTPS origin; allow only it. Existing cookie Path=/, HttpOnly, SameSite=Lax, Secure under HTTPS, no Domain. Proxy must not cache private API responses. Browser has no server key. Reverse proxy is operator-owned, not a second application backend.
+
+SQLite uses a persistent volume and one process, not ephemeral/serverless storage. Run deadline/lease recovery on read/startup; do not restart into concurrent runner instances. Set reverse proxy request timeout above configured inference timeout plus persistence margin (e.g. timeout 180s => proxy at least 210s). A synchronous bounded request is acceptable; no detached promise. Actual host/access/timeout and restart proof remain gates, not guaranteed by this design. No deployment performed.
+
+## Two-agent ownership and next milestones
+
+| Owner | Exclusive files / responsibility |
+|---|---|
+| Agent A — backend/integrator | `src/lib/shared/briefs.ts`, root toolchain/package/lockfile, `src/lib/server/{auth,env,db,runtime}.ts`, new `briefs.ts`, `brief-inference.ts`, `brief-runner.ts`, `brief-publication.ts`, `quota.ts`, `brief-http.ts`, migrations, all `src/app/api/briefs/**`, `src/app/api/briefmint/**`, auth route integration, `tests/server/**`, this contract, deployment/proxy configuration |
+| Agent B — browser/Arkiv | `apps/web/**` including its package/lockfile, `src/lib/arkiv/briefmint/{schema,read,write}.ts`, browser API/session adapters within `apps/web`, neutral Arkiv adapter tests under `tests/arkiv/**`, independent reader, Arkiv evidence docs |
+
+No shared-file edits by B. Request a coordinated version bump for contract changes. A alone reviews/changes root test inclusion when B adds neutral adapter tests. Use separate checkouts/worktrees; neither edits the other's live files. Both build against this exact foundation commit. No merge/push/deployment implied.
+
+Immediate A task: implement ordered additive migrations and owner-bound create/get/list/save/approve services plus HTTP routes, then add purpose-selected auth and honest config. Keep `001-initial.sql`, jobs/attempts/settlements and their immutability trigger unchanged. New tables: briefs, brief_attempts, brief_approvals, brief_publications/intents, quota ledger; unique owner/intention constraints and durable leases. Test migration of an existing legacy database, wrong-owner 404, stale revisions and restart recovery before attaching inference.
+
+Immediate B task, independently: import this DTO module; replace demo state with a typed relative API client; implement neutral Arkiv schema/read adapter and browser intent writer against installed SDK. Test adapters with clearly labelled doubles while A routes are being built. Never show doubles as real evidence. No frontend changes are made by this foundation task.
+
+Next joint gate: real authorized private inference and Arkiv create/query/patch/expiry, exact indexed schema/limits, same-origin wallet login, full private-to-public flow and restart recovery. Quota values/model/token caps/global window remain measured configuration; config exposes null values while unavailable. No paid state or legacy checkout enabling can substitute for quota readiness. First compile publishes nothing automatically.
+
+## Verification record
+
+See `tests/server/briefs-contract.test.ts` for executable boundary, canonicalization, approval, source-reference, size and publication tests. Full local commands/results are recorded in `docs/backend-handoff.md` after execution. Unit tests validate this foundation only: no real model inference, Arkiv publication, hosting or integrated Vite journey has been performed.

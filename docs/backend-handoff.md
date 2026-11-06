@@ -1,5 +1,17 @@
 # Backend handoff
 
+## BriefMint foundation — 6 November 2026
+
+The user-approved BriefMint PRD now governs the new product. The sections below this update describe the preserved **legacy translation backend**, not BriefMint requirements. No Whitechain checkout/funding is required for BriefMint.
+
+Starting HEAD `4f2f4d17c92ea7b3996ffefe7c5ae5e4e406b307`, branch `codex/payment-backend`, clean before work. Added `src/lib/shared/briefs.ts` (strict request/response DTOs, public projection/canonical SHA-256, approval checks, independent states and neutral Arkiv interfaces), `tests/server/briefs-contract.test.ts`, and [the frozen integration contract](briefmint/integration-contract.md). No legacy runtime/schema or `apps/web` edits. Frontend reference inspected at `cb0db61d3515ee0621547f7832e9826f4be08f2e` through Git objects, not merged.
+
+Actual checks: `npm run test:server` passed **33 tests** (21 existing, 12 new); `npm run lint` passed; `npm run typecheck` passed. Initial typecheck found a test-only excess-property typing error in a deliberate hostile-input test; fixed and all checks rerun successfully. Independent read-only review prompted approved-payload snapshots, intent hash checking, source-reference checks and publication-state consistency validation. No production build or Solidity rerun was needed for this shared-contract-only change; no live dependency checks were performed.
+
+Auth chain selection (BriefMint 7794095, legacy default 1874), single-origin Vite/Next hosting, browser-sign/server-reconcile ownership and exact Agent A/B files are **specified**, not activated. Next A task: additive migrations plus owner-bound brief CRUD/approval routes and purpose-selected auth. Next B task: shared DTO consumer and neutral Arkiv adapters. Real 0G, Arkiv lifecycle, quota/model measurements and integrated frontend/hosting remain live gates. Prepared-but-uncertain broadcast recovery must remain conservative; do not create duplicate intents to evade it. No credentials accessed, transactions, deployment, push or merge performed.
+
+## Legacy backend handoff (preserved)
+
 **Status:** implementation and reported code checks pass on this branch. All live readiness gates remain pending, and the work remains on the branch until those checks are satisfied. This does not claim a genuine deployment or paid translation.
 
 ## Contract
