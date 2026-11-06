@@ -8,6 +8,12 @@ export interface BuildingTag {
 }
 
 export function tagFor(id: BuildingId, city: CityState, fixture: boolean): BuildingTag | null {
+  const tag = baseTag(id, city, fixture);
+  // Fixture previews never get success colouring.
+  return tag && fixture && tag.tone === "ok" ? { ...tag, tone: "muted" } : tag;
+}
+
+function baseTag(id: BuildingId, city: CityState, fixture: boolean): BuildingTag | null {
   if (id === "studio") {
     if (city.studio === "running") return { text: "compiling…", tone: "info" };
     if (city.studio === "failed") return { text: "⚠ failed — unresolved", tone: "warn" };

@@ -4,7 +4,8 @@
 // Loading / failed / empty states stay distinct; a failed refresh never proves
 // withdrawal, expiry, or deletion.
 import { useCallback, useEffect, useRef, useState } from "react";
-import AppShell from "@/components/app/AppShell";
+import NavLinks from "@/components/app/NavLinks";
+import WalletControls from "@/components/wallet/WalletControls";
 import CityPanel from "@/components/city/CityPanel";
 import CityScene from "@/components/city/CityScene";
 import { briefStateToScene } from "@/components/city/brief-state-to-scene";
@@ -168,86 +169,64 @@ export default function HomePage() {
     return null;
   })();
 
-  const stateWords = brief
-    ? brief.executionStatus === "running"
-      ? "Compilation running — polling the saved record."
-      : brief.publication.lastObservedStatus === "pending"
-        ? "Publication waiting for on-chain confirmation."
-        : brief.publication.lastObservedStatus === "live"
-          ? "Opportunity live on Arkiv."
-          : brief.executionStatus === "ready" && brief.reviewStatus === "approved"
-            ? "Revision approved — ready to publish."
-            : brief.executionStatus === "ready"
-              ? "Compiled — review the public preview."
-              : brief.executionStatus === "draft"
-                ? "Draft saved — ready to compile."
-                : "Compilation needs attention — check retry eligibility."
-    : "No active brief — save notes at the Planning Desk.";
+  const openCount = opportunities.filter((o) => o.status === "open").length;
+  const idleHint =
+    brief?.executionStatus === "running"
+      ? "Compiling — polling the saved record"
+      : brief?.publication.lastObservedStatus === "pending"
+        ? "Waiting for on-chain confirmation"
+        : "Follow the worker to continue";
 
   return (
-    <AppShell>
-      <div className="hud-root">
-        <h1 className="sr-only">BriefMint — private notes to public opportunity</h1>
-        <div className="hud-body">
-          <div className="hud-scene-wrap">
-            <details className="hud-status" open>
-              <summary className="hud-status-summary">
-                <span className="hud-status-words">{stateWords}</span>
-                {briefConfigError && <span className="badge badge-stale">BriefMint config unavailable</span>}
-              </summary>
-              <div className="hud-status-body">
-                <p className="hud-status-text">{scene.note}</p>
-                {briefConfigError ? (
-                  <p className="hud-status-config" role="status">{briefConfigError}</p>
-                ) : briefConfig && !briefConfig.ready ? (
-                  <p className="hud-status-config" role="status">
-                    BriefMint services are not fully ready — intake, compilation, or Arkiv may be unavailable. States below stay honest.
-                  </p>
-                ) : briefConfig ? (
-                  <p className="hud-status-config">BriefMint config ready.</p>
-                ) : (
-                  <p className="hud-status-config">Checking BriefMint config…</p>
-                )}
-                <p className="hud-status-credits">Compilation uses promotional credits. Advertised budget is unfunded.</p>
-              </div>
-            </details>
-            <CityScene selected={building} onSelect={setBuilding} scene={scene} jobStatusLabel={brief?.executionStatus ?? null} />
+    <div className="city-page">
+      <h1 className="sr-only">BriefMint — private notes to public opportunity</h1>
+      <CityScene
+        selected={building}
+        onSelect={setBuilding}
+        scene={scene}
+        scan={{ opportunities: opportunities.length, open: openCount, loading: oppLoading, stale: oppStale, error: Boolean(oppError) }}
+        action={nextAction}
+        idleHint={idleHint}
+        notice={
+          briefConfigError ? (
+            <p className="notice notice-warn" role="status">{briefConfigError} Saving, compiling and publishing are unavailable until the backend responds.</p>
+          ) : briefConfig && !briefConfig.ready ? (
+            <p className="notice notice-warn" role="status">Some BriefMint services are not ready: intake, compilation or Arkiv may be unavailable.</p>
+          ) : null
+        }
+        consoleTop={
+          <div className="console-top">
+            <div className="console-title">
+              <span className="console-name">BriefMint</span>
+              <span className="console-sub">Tool City · private notes → public opportunity</span>
+            </div>
+            <WalletControls />
+            <NavLinks />
           </div>
-          <div className="hud-side">
-            <CityPanel
-              building={building}
-              briefConfig={briefConfig}
-              briefConfigError={briefConfigError}
-              brief={brief}
-              briefs={briefSummaries}
-              briefsLoading={briefsLoading}
-              opportunities={opportunities}
-              opportunitiesLoading={oppLoading}
-              opportunitiesError={oppError}
-              opportunitiesStale={oppStale}
-              lastRefresh={lastRefresh}
-              onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
-              selectedOpportunity={selectedOpportunity}
-              onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
-              onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}
-              onBriefChange={setBrief}
-              onRunBrief={handleRun}
-              runBusy={runBusy}
-              runError={runError}
-            />
-          </div>
-        </div>
-        <div className="hud-actionbar" role="status">
-          <span className="hud-actionbar-words">{stateWords}</span>
-          {nextAction ? (
-            <button type="button" className="btn btn-primary hud-action" disabled={nextAction.busy} onClick={nextAction.run}>
-              {nextAction.label}
-            </button>
-          ) : (
-            <span className="hud-muted">{brief?.executionStatus === "running" ? "No action needed — polling the saved record." : "Follow the worker to continue."}</span>
-          )}
-        </div>
-      </div>
-    </AppShell>
+        }
+      >
+        <CityPanel
+          building={building}
+          briefConfig={briefConfig}
+          briefConfigError={briefConfigError}
+          brief={brief}
+          briefs={briefSummaries}
+          briefsLoading={briefsLoading}
+          opportunities={opportunities}
+          opportunitiesLoading={oppLoading}
+          opportunitiesError={oppError}
+          opportunitiesStale={oppStale}
+          lastRefresh={lastRefresh}
+          onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
+          selectedOpportunity={selectedOpportunity}
+          onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
+          onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}
+          onBriefChange={setBrief}
+          onRunBrief={handleRun}
+          runBusy={runBusy}
+          runError={runError}
+        />
+      </CityScene>
+    </div>
   );
 }

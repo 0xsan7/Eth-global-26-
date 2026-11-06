@@ -1,55 +1,54 @@
-// Tool City game renderer (PixiJS, WebGL with canvas fallback).
-// Draws procedurally — no external images or fonts. It only READS CityState:
-// nothing here calls back into React, the API, the wallet or brief state.
-// Walks, stamps and pulses are decoration that start from observed state changes.
+// Tool City game renderer (PixiJS 8): a full-screen isometric tile island you can
+// pan and zoom. Everything is drawn procedurally — no external images or fonts.
+// The engine only READS CityState; it never calls the API, the wallet or React state.
+// Walks, stamps and pulses are decoration triggered by observed state changes.
 import { Application, Container, Graphics, Text, type TextStyleFontWeight } from "pixi.js";
 import type { CityState, QuestKind } from "../city-state";
 import { isoGeometry, lerp, type IsoGeometry, type Pt } from "../iso-geometry";
+import { keyBuildingDef } from "../iso-buildings";
+import {
+  GRID_N,
+  KEY_BLOCKS,
+  KEY_PLOTS,
+  PLAZA_BLOCK,
+  ROAD_LINES,
+  SAND_RING,
+  TILE_W,
+  blockOrigin,
+  doorFor,
+  isRoadCell,
+  isSandCell,
+  isoRoute,
+  toWorld,
+  type GridPt,
+} from "../iso-layout";
 import type { BuildingTag } from "../scene-labels";
-import { BUILDINGS, PLAZA, VIEWBOX, type BuildingDef, type BuildingId } from "../scene-config";
-import { easeInOut, pathLength, pointAlong, streetRoute, walkDurationMs } from "../walk-path";
+import { BUILDINGS, type BuildingDef, type BuildingId } from "../scene-config";
+import { easeInOut } from "../walk-path";
 
 export type MotionMode = "on" | "paused" | "off";
+export interface CameraState {
+  x: number;
+  y: number;
+  z: number;
+}
 
-const FONT = "'Fredoka Variable', system-ui, -apple-system, 'Segoe UI', sans-serif";
-const INK = 0x3b2f22;
+const FONT = "'Space Mono', ui-monospace, monospace";
+const INK = 0x1b2a33;
 const TAU = Math.PI * 2;
-const ISLAND = { x: 12, y: 30, w: 616, h: 354, r: 52 };
+const WATER = 0x3a8fcc;
 const DOOR_MS = 900;
 const POP_MS = 420;
 const STAMP_MS = 520;
-
-const TREES: Array<{ x: number; y: number; s: number; p: number }> = [
-  { x: 40, y: 206, s: 1, p: 0 },
-  { x: 250, y: 96, s: 0.9, p: 1.3 },
-  { x: 604, y: 214, s: 1.1, p: 2.1 },
-  { x: 590, y: 352, s: 0.95, p: 0.7 },
-  { x: 236, y: 362, s: 1, p: 2.8 },
-  { x: 420, y: 366, s: 0.85, p: 1.8 },
-  { x: 36, y: 120, s: 0.9, p: 0.4 },
-  { x: 600, y: 74, s: 0.85, p: 2.4 },
-];
-const LAMPS: Pt[] = [
-  { x: 60, y: 226 },
-  { x: 240, y: 226 },
-  { x: 410, y: 270 },
-  { x: 584, y: 226 },
-];
-const FOUNTAIN: Pt = { x: 362, y: 328 };
-/** Where the worker stands for each building: on the street, clear of the nameplates. */
-const STAND: Record<BuildingId, Pt> = {
-  home: { x: 200, y: 247 },
-  registry: { x: 214, y: 247 },
-  treasury: { x: 330, y: 236 },
-  studio: { x: 430, y: 247 },
-  archive: { x: 556, y: 250 },
-};
+const WALK_PX_PER_S = 95;
+const HUD_RIGHT = 400; // px reserved for the console window on wide screens
+const BOUNDS = { minX: -GRID_N * 20 - 40, maxX: GRID_N * 20 + 40, minY: -140, maxY: GRID_N * 20 + 40 };
 
 const TAG_COLORS: Record<BuildingTag["tone"], string> = {
   info: "#1f4f7a",
   ok: "#1d5a38",
   warn: "#6b3d00",
-  muted: "#45413a",
+  muted: "#3d3a34",
 };
 
 function shade(color: string | number, f: number): number {
@@ -70,26 +69,30 @@ function seeded(seed: number) {
   };
 }
 
-function text(s: string, size: number, fill: string, weight: TextStyleFontWeight = "700", halo = true): Text {
+function label(s: string, size: number, fill: string, weight: TextStyleFontWeight = "700", halo = true): Text {
   const t = new Text({
     text: s,
+    resolution: 3,
     style: {
       fontFamily: FONT,
       fontSize: size,
       fontWeight: weight,
       fill,
-      ...(halo ? { stroke: { color: "#faf6ec", width: 4, join: "round" as const } } : {}),
+      letterSpacing: 0.6,
+      ...(halo ? { stroke: { color: "#fbf8ef", width: 4, join: "round" as const } } : {}),
     },
   });
   t.anchor.set(0.5);
   return t;
 }
 
-const easeOutBack = (x: number) => {
-  const c = 1.6;
-  return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2);
-};
+const easeOutBack = (x: number) => 1 + 2.6 * Math.pow(x - 1, 3) + 1.6 * Math.pow(x - 1, 2);
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+function tile(gx: number, gy: number): Pt[] {
+  return [toWorld({ gx, gy }), toWorld({ gx: gx + 1, gy }), toWorld({ gx: gx + 1, gy: gy + 1 }), toWorld({ gx, gy: gy + 1 })];
+}
 
 function winPts(a: Pt, b: Pt, t0: number, t1: number, lift: number, h = 12): Pt[] {
   const x0 = lerp(a.x, b.x, t0);
@@ -109,29 +112,41 @@ function inset(ps: Pt[], f: number): Pt[] {
   return ps.map((p) => ({ x: lerp(p.x, c.x, f), y: lerp(p.y, c.y, f) }));
 }
 
-function dashedPoly(g: Graphics, ps: Pt[], dash: number, gap: number) {
-  for (let i = 0; i < ps.length; i++) {
-    const a = ps[i];
+/** Dashed closed polyline; `offset` (px) shifts the dash pattern; `upTo` (0..1) draws it in. */
+function dashedPoly(g: Graphics, ps: Pt[], dash: number, gap: number, offset = 0, upTo = 1) {
+  const segs = ps.map((a, i) => {
     const b = ps[(i + 1) % ps.length];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    for (let d = 0; d < len; d += dash + gap) {
-      const e = Math.min(len, d + dash);
-      g.moveTo(lerp(a.x, b.x, d / len), lerp(a.y, b.y, d / len)).lineTo(lerp(a.x, b.x, e / len), lerp(a.y, b.y, e / len));
+    return { a, b, len: Math.hypot(b.x - a.x, b.y - a.y) };
+  });
+  const total = segs.reduce((s, x) => s + x.len, 0);
+  const limit = total * upTo;
+  const period = dash + gap;
+  let start = -(((offset % period) + period) % period);
+  let acc = 0;
+  for (const s of segs) {
+    for (let d = start; d < s.len; d += period) {
+      const d0 = Math.max(0, d);
+      const d1 = Math.min(s.len, d + dash);
+      if (d1 <= d0 || acc + d0 > limit) continue;
+      const e = Math.min(d1, limit - acc);
+      g.moveTo(lerp(s.a.x, s.b.x, d0 / s.len), lerp(s.a.y, s.b.y, d0 / s.len)).lineTo(
+        lerp(s.a.x, s.b.x, e / s.len),
+        lerp(s.a.y, s.b.y, e / s.len),
+      );
     }
+    start = ((start - s.len) % period + period) % period - period;
+    acc += s.len;
   }
 }
 
-/** Dashed ellipse; `offset` (0..1) rotates the dashes, `upTo` (0..1) draws it in. */
-function dashedEllipse(g: Graphics, cx: number, cy: number, rx: number, ry: number, offset: number, upTo: number) {
-  const n = 36;
+function dashedCircle(g: Graphics, cx: number, cy: number, r: number, n = 12) {
   for (let k = 0; k < n; k++) {
-    if (k / n >= upTo) break;
-    const a0 = (k / n + offset) * TAU;
-    const a1 = a0 + (0.62 / n) * TAU;
-    g.moveTo(cx + Math.cos(a0) * rx, cy + Math.sin(a0) * ry);
+    const a0 = (k / n) * TAU;
+    const a1 = a0 + (0.6 / n) * TAU;
+    g.moveTo(cx + Math.cos(a0) * r, cy + Math.sin(a0) * r);
     for (let s = 1; s <= 3; s++) {
       const a = lerp(a0, a1, s / 3);
-      g.lineTo(cx + Math.cos(a) * rx, cy + Math.sin(a) * ry);
+      g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
   }
 }
@@ -146,10 +161,13 @@ interface BuildingView {
   lit: Graphics[];
   door: Graphics;
   decor: Container;
+  under: Container;
   plate: Container;
   plateBg: Graphics;
   plateText: Text;
-  tag: Text;
+  tag: Container;
+  tagBg: Graphics;
+  tagText: Text;
   hover: number;
   press: number;
   doorStart: number | null;
@@ -183,10 +201,11 @@ const emptyDecor = (): Decor => ({
 
 export class CityEngine {
   private app: Application;
+  private host: HTMLElement;
   private world = new Container();
-  private depth = new Container();
   private ground = new Container();
-  private sky = new Container();
+  private depth = new Container();
+  private overlayLayer = new Container();
   private ui = new Container();
   private views = new Map<BuildingId, BuildingView>();
   private decor = emptyDecor();
@@ -196,30 +215,40 @@ export class CityEngine {
   private selected: BuildingId | null = null;
   private selStart = -1e9;
   private hovered: BuildingId | null = null;
-  private parallax = { x: 0, y: 0, tx: 0, ty: 0 };
   private ripples: Array<{ g: Graphics; start: number }> = [];
   private stampStart = -1e9;
   private stampOutStart = -1e9;
   private scanStart = -1e9;
   private boxesStart = -1e9;
   private resizeObs: ResizeObserver | null = null;
+  private cleanup: Array<() => void> = [];
 
-  // scenery refs
+  // camera
+  private cam: CameraState = { x: 0, y: 0, z: 1 };
+  private fitZ = 1;
+  private userMoved = false;
+  private onCamera: ((c: CameraState) => void) | null;
+  private drag: { id: number; sx: number; sy: number; cx: number; cy: number; moved: boolean } | null = null;
+  private pinch: { d: number; z: number } | null = null;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private suppressClick = false;
+
+  // scenery
   private waves: Array<{ g: Graphics; x: number; y: number; p: number }> = [];
   private foam!: Graphics;
   private trees: Array<{ c: Container; p: number }> = [];
   private glows: Graphics[] = [];
   private jet!: Graphics;
   private fountainRipples: Graphics[] = [];
-  private shimmer!: Graphics;
-  private clouds: Array<{ g: Graphics; speed: number; off: number }> = [];
+  private clouds: Array<{ g: Graphics; speed: number; off: number; y: number }> = [];
   private birds!: Container;
   private birdWings: Graphics[] = [];
-  private boat!: Container;
+  private boats: Array<{ c: Container; a: Pt; b: Pt; period: number; off: number }> = [];
+  private beam!: Graphics;
   private selRing = new Graphics();
   private quest = new Container();
   private questBg = new Graphics();
-  private questText = text("!", 15, "#3d2c05", "800", false);
+  private questText = label("!", 15, "#3d2c05", "700", false);
 
   // worker
   private worker = new Container();
@@ -234,51 +263,183 @@ export class CityEngine {
   private wAlert = new Container();
   private wWait = new Container();
   private wWaitDots: Graphics[] = [];
-  private wPos: Pt = { ...PLAZA };
-  private walk: { path: Pt[]; start: number; dur: number; len: number; to: BuildingId | null } | null = null;
+  private wGrid: GridPt = doorFor("home");
+  private walk: { path: GridPt[]; world: Pt[]; lens: number[]; total: number; start: number; dur: number; to: BuildingId | null } | null = null;
   private stride = 0;
 
-  private constructor(app: Application) {
+  private constructor(app: Application, host: HTMLElement, onCamera: ((c: CameraState) => void) | null) {
     this.app = app;
+    this.host = host;
+    this.onCamera = onCamera;
   }
 
-  static async create(host: HTMLElement): Promise<CityEngine> {
-    // Canvas text needs the web font loaded first; fall back silently if it is not.
-    await document.fonts?.load("600 13px 'Fredoka Variable'").catch(() => undefined);
+  static async create(host: HTMLElement, opts: { onCamera?: (c: CameraState) => void } = {}): Promise<CityEngine> {
+    await document.fonts?.load("700 12px 'Space Mono'").catch(() => undefined);
     const app = new Application();
     await app.init({
-      width: VIEWBOX.w,
-      height: VIEWBOX.h,
+      resizeTo: host,
       antialias: true,
-      backgroundAlpha: 0,
-      autoDensity: false,
+      background: WATER,
+      autoDensity: true,
       preference: "webgl",
-      resolution: CityEngine.resolutionFor(host),
+      resolution: Math.min(2, window.devicePixelRatio || 1),
     });
-    const engine = new CityEngine(app);
+    const engine = new CityEngine(app, host, opts.onCamera ?? null);
     const canvas = app.canvas as HTMLCanvasElement;
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
+    canvas.style.position = "absolute";
+    canvas.style.inset = "0";
     canvas.style.display = "block";
     canvas.setAttribute("aria-hidden", "true");
-    host.appendChild(canvas);
+    host.prepend(canvas);
     engine.build();
-    engine.resizeObs = new ResizeObserver(() =>
-      app.renderer.resize(VIEWBOX.w, VIEWBOX.h, CityEngine.resolutionFor(host)),
-    );
+    engine.fit();
+    engine.resizeObs = new ResizeObserver(() => {
+      app.resize();
+      if (!engine.userMoved) engine.fit();
+      else engine.applyCamera();
+    });
     engine.resizeObs.observe(host);
+    engine.bindInput();
     app.ticker.add((tk) => engine.update(tk.deltaMS));
     return engine;
   }
 
-  private static resolutionFor(host: HTMLElement): number {
-    const w = host.clientWidth || VIEWBOX.w;
-    return Math.min(3, Math.max(1, ((window.devicePixelRatio || 1) * w) / VIEWBOX.w));
-  }
-
   destroy() {
     this.resizeObs?.disconnect();
+    this.cleanup.forEach((f) => f());
     this.app.destroy({ removeView: true }, { children: true });
+  }
+
+  // ---------- camera ----------
+
+  private viewport() {
+    const w = this.host.clientWidth || 800;
+    const h = this.host.clientHeight || 600;
+    const reserve = w >= 1000 ? HUD_RIGHT : 0;
+    return { w, h, reserve };
+  }
+
+  /** Fit the island in the area left of the console window. */
+  fit() {
+    const { w, h, reserve } = this.viewport();
+    const bw = BOUNDS.maxX - BOUNDS.minX;
+    const bh = BOUNDS.maxY - BOUNDS.minY;
+    const z = Math.min((w - reserve) / bw, h / bh) * 0.98;
+    this.fitZ = z;
+    // Phones start closer in; the whole island is one pinch away.
+    const z0 = clamp(z * (w < 700 ? 1.9 : 1.08), z * 0.8, z * 4);
+    this.cam = {
+      z: z0,
+      x: (w - reserve) / 2 - ((BOUNDS.minX + BOUNDS.maxX) / 2) * z0,
+      y: h / 2 - ((BOUNDS.minY + BOUNDS.maxY) / 2) * z0,
+    };
+    this.userMoved = false;
+    this.applyCamera();
+  }
+
+  zoomBy(f: number, sx?: number, sy?: number) {
+    const { w, h, reserve } = this.viewport();
+    const px = sx ?? (w - reserve) / 2;
+    const py = sy ?? h / 2;
+    const z = clamp(this.cam.z * f, this.fitZ * 0.8, this.fitZ * 4);
+    const k = z / this.cam.z;
+    this.cam = { z, x: px - (px - this.cam.x) * k, y: py - (py - this.cam.y) * k };
+    this.userMoved = true;
+    this.applyCamera();
+  }
+
+  private applyCamera() {
+    const { w, h } = this.viewport();
+    const z = this.cam.z;
+    // Keep part of the island on screen.
+    this.cam.x = clamp(this.cam.x, -BOUNDS.maxX * z + 120, w - BOUNDS.minX * z - 120);
+    this.cam.y = clamp(this.cam.y, -BOUNDS.maxY * z + 120, h - BOUNDS.minY * z - 120);
+    this.world.position.set(this.cam.x, this.cam.y);
+    this.world.scale.set(z);
+    this.onCamera?.({ ...this.cam });
+    this.requestRender();
+  }
+
+  camera(): CameraState {
+    return { ...this.cam };
+  }
+
+  /** True once if the last pointer gesture was a drag (so the click should be ignored). */
+  consumeDrag(): boolean {
+    const v = this.suppressClick;
+    this.suppressClick = false;
+    return v;
+  }
+
+  private bindInput() {
+    const el = this.host;
+    const local = (e: PointerEvent | WheelEvent) => {
+      const r = el.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const p = local(e);
+      this.zoomBy(Math.exp(-e.deltaY * 0.0015), p.x, p.y);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      const p = local(e);
+      this.pointers.set(e.pointerId, p);
+      if (this.pointers.size === 2) {
+        const [a, b] = [...this.pointers.values()];
+        this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: this.cam.z };
+        this.drag = null;
+        return;
+      }
+      this.suppressClick = false;
+      this.drag = { id: e.pointerId, sx: p.x, sy: p.y, cx: this.cam.x, cy: this.cam.y, moved: false };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!this.pointers.has(e.pointerId)) return;
+      const p = local(e);
+      this.pointers.set(e.pointerId, p);
+      if (this.pinch && this.pointers.size === 2) {
+        const [a, b] = [...this.pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        const target = this.pinch.z * (d / Math.max(1, this.pinch.d));
+        this.zoomBy(target / this.cam.z, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        this.suppressClick = true;
+        return;
+      }
+      const d = this.drag;
+      if (!d || d.id !== e.pointerId) return;
+      const dx = p.x - d.sx;
+      const dy = p.y - d.sy;
+      if (!d.moved && Math.hypot(dx, dy) < 5) return;
+      d.moved = true;
+      el.dataset.dragging = "true";
+      this.cam.x = d.cx + dx;
+      this.cam.y = d.cy + dy;
+      this.userMoved = true;
+      this.applyCamera();
+    };
+    const onUp = (e: PointerEvent) => {
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinch = null;
+      if (this.drag && this.drag.id === e.pointerId) {
+        if (this.drag.moved) this.suppressClick = true;
+        this.drag = null;
+        delete el.dataset.dragging;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    this.cleanup.push(() => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    });
   }
 
   // ---------- public API (presentation only) ----------
@@ -298,16 +459,19 @@ export class CityEngine {
     this.city = city;
     const animate = this.mode === "on";
     const sameBrief = prev !== null && city.briefId !== null && prev.briefId === city.briefId;
+    const target = doorFor(city.worker.building ?? "home");
 
-    const target = city.worker.building ? STAND[city.worker.building] : PLAZA;
     // First render, a different brief, or motion not running: jump, no travel or replay.
     if (!sameBrief || !animate) {
       this.walk = null;
-      this.wPos = { ...target };
-    } else if (Math.hypot(target.x - this.wPos.x, target.y - this.wPos.y) > 0.5) {
-      const path = streetRoute(this.wPos, target);
-      const len = pathLength(path);
-      this.walk = { path, start: this.t, dur: walkDurationMs(len), len, to: city.worker.building };
+      this.wGrid = { ...target };
+    } else if (Math.abs(target.gx - this.wGrid.gx) + Math.abs(target.gy - this.wGrid.gy) > 0.01) {
+      const path = isoRoute(this.wGrid, target);
+      const world = path.map(toWorld);
+      const lens = world.slice(1).map((p, i) => Math.hypot(p.x - world[i].x, p.y - world[i].y));
+      const total = lens.reduce((a, b) => a + b, 0);
+      const dur = clamp((total / WALK_PX_PER_S) * 1000, 600, 4500);
+      this.walk = { path, world, lens, total, start: this.t, dur, to: city.worker.building };
     }
 
     if (sameBrief && animate && prev) {
@@ -323,18 +487,9 @@ export class CityEngine {
       }
     }
     if (animate && prev && prev.briefId === null && city.briefId !== null) this.boxesStart = this.t;
-    if (!animate) {
-      this.stampStart = this.stampOutStart = this.scanStart = this.boxesStart = -1e9;
-    }
+    if (!animate) this.stampStart = this.stampOutStart = this.scanStart = this.boxesStart = -1e9;
 
-    for (const v of this.views.values()) {
-      const tag = tags[v.def.id];
-      v.tag.visible = tag !== null;
-      if (tag) {
-        v.tag.text = tag.text;
-        v.tag.style.fill = TAG_COLORS[tag.tone];
-      }
-    }
+    for (const v of this.views.values()) this.drawTag(v, tags[v.def.id]);
     this.buildDecor(city);
     this.drawWorkerProps(city);
     this.drawQuest(city.quest);
@@ -361,229 +516,364 @@ export class CityEngine {
     if (!v) return;
     v.press = 1;
     const g = new Graphics();
-    this.ground.addChild(g);
-    g.position.set(v.def.cx, v.def.cy + v.geo.hh * 0.55);
+    this.overlayLayer.addChild(g);
+    g.position.set(v.def.cx, v.def.cy);
     this.ripples.push({ g, start: this.t });
-  }
-
-  setParallax(dx: number, dy: number) {
-    this.parallax.tx = dx;
-    this.parallax.ty = dy;
   }
 
   // ---------- scene construction ----------
 
   private build() {
-    const stage = this.app.stage;
-    stage.addChild(this.world);
-    this.world.addChild(this.buildWater(), this.buildIsland(), this.ground, this.depth, this.sky, this.ui);
+    this.app.stage.addChild(this.world);
+    this.world.addChild(this.ground, this.overlayLayer, this.depth, this.ui);
     this.depth.sortableChildren = true;
-    this.buildStreets();
-    this.buildProps();
-    BUILDINGS.forEach((def, i) => this.buildBuilding(def, i));
+    this.buildSea();
+    this.buildIsland();
+    this.buildPlaza();
+    this.buildFillers();
+    this.buildTreesAndLamps();
+    BUILDINGS.forEach((b, i) => this.buildKeyBuilding(keyBuildingDef(b.id), i));
     this.buildWorker();
     this.buildSky();
-    this.ground.addChild(this.selRing);
+    this.overlayLayer.addChild(this.selRing);
     this.quest.addChild(this.questBg, this.questText);
     this.ui.addChild(this.quest);
   }
 
-  private buildWater(): Container {
-    const c = new Container();
-    const g = new Graphics();
-    g.rect(-40, -40, VIEWBOX.w + 80, VIEWBOX.h + 80).fill(0x4f9fbf);
-    g.rect(-40, -40, VIEWBOX.w + 80, 70).fill({ color: 0x68b3cf, alpha: 0.6 });
-    g.rect(-40, VIEWBOX.h - 24, VIEWBOX.w + 80, 70).fill({ color: 0x3f8db0, alpha: 0.7 });
-    c.addChild(g);
+  private buildSea() {
     const r = seeded(7);
-    for (let i = 0; i < 22; i++) {
-      const bottom = i % 3 !== 0;
-      const x = r() * VIEWBOX.w;
-      const y = bottom ? VIEWBOX.h - 22 + r() * 22 : 4 + r() * 22;
+    for (let i = 0; i < 140; i++) {
+      const x = -1400 + r() * 2800;
+      const y = -700 + r() * 2000;
+      const p = toWorld({ gx: 0, gy: 0 });
+      const inIsland = Math.abs(x - p.x) / (GRID_N * 20 + 60) + Math.abs(y - GRID_N * 10) / (GRID_N * 10 + 30) < 1;
+      if (inIsland) continue;
       const w = new Graphics();
-      w.moveTo(-6, 0).quadraticCurveTo(0, -3, 6, 0).stroke({ width: 1.5, color: 0xd9f1f8, alpha: 0.9, cap: "round" });
+      w.moveTo(-7, 0).lineTo(7, 0).stroke({ width: 2, color: 0xbfe3f5, alpha: 0.9, cap: "round" });
       w.position.set(x, y);
-      c.addChild(w);
+      this.ground.addChild(w);
       this.waves.push({ g: w, x, y, p: r() });
     }
-    return c;
   }
 
-  private buildIsland(): Container {
-    const c = new Container();
-    const { x, y, w, h, r } = ISLAND;
-    this.foam = new Graphics();
-    this.foam.roundRect(x - 5, y + 20, w + 10, h + 10, r + 6).stroke({ width: 4, color: 0xffffff, alpha: 0.9 });
+  private buildIsland() {
     const g = new Graphics();
-    g.roundRect(x, y + 24, w, h, r).fill(0x5e4632);
-    g.roundRect(x, y + 14, w, h, r).fill(0x8a6a48);
-    g.roundRect(x + 6, y + 19, w - 12, h - 4, r).stroke({ width: 1.5, color: 0x6e5238, alpha: 0.6 });
-    g.roundRect(x, y, w, h, r).fill(0x9db38a);
-    g.roundRect(x, y, w, h, r).stroke({ width: 2.5, color: 0xb7cc9f, alpha: 0.9 });
-    g.ellipse(110, 330, 120, 46).fill(0x8aa176);
-    g.ellipse(560, 96, 60, 40).fill(0x8aa176);
-    const rnd = seeded(11);
-    for (let i = 0; i < 90; i++) {
-      const px = x + 20 + rnd() * (w - 40);
-      const py = y + 14 + rnd() * (h - 28);
-      const onStreet = (py > 222 && py < 272) || (px > 296 && px < 348 && py > 104) || Math.hypot((px - 320) / 80, (py - 322) / 36) < 1;
-      if (onStreet) continue;
-      if (i % 9 === 0) {
-        g.circle(px, py, 1.8).fill(i % 2 ? 0xf2d16b : 0xf4f0e6);
-      } else {
-        g.moveTo(px - 2, py).lineTo(px, py - 3.5).lineTo(px + 2, py).stroke({ width: 1, color: 0x6f8c5c, alpha: 0.75 });
+    // shallow water halo
+    const N = GRID_N;
+    const halo = [toWorld({ gx: -2.5, gy: -2.5 }), toWorld({ gx: N + 2.5, gy: -2.5 }), toWorld({ gx: N + 2.5, gy: N + 2.5 }), toWorld({ gx: -2.5, gy: N + 2.5 })];
+    g.poly(halo).fill({ color: 0x5fb6e0, alpha: 0.75 });
+    const halo2 = [toWorld({ gx: -1, gy: -1 }), toWorld({ gx: N + 1, gy: -1 }), toWorld({ gx: N + 1, gy: N + 1 }), toWorld({ gx: -1, gy: N + 1 })];
+    g.poly(halo2).fill({ color: 0x7cc8e8, alpha: 0.8 });
+    this.foam = new Graphics();
+    this.foam.poly([toWorld({ gx: -0.4, gy: -0.4 }), toWorld({ gx: N + 0.4, gy: -0.4 }), toWorld({ gx: N + 0.4, gy: N + 0.4 }), toWorld({ gx: -0.4, gy: N + 0.4 })]).stroke({ width: 3, color: 0xffffff, alpha: 0.9 });
+
+    const r = seeded(19);
+    for (let gx = 0; gx < N; gx++) {
+      for (let gy = 0; gy < N; gy++) {
+        const edge = Math.min(gx, gy, N - 1 - gx, N - 1 - gy);
+        if (edge === 0 && r() < 0.35) continue; // ragged coast
+        const ps = tile(gx, gy);
+        if (isSandCell(gx, gy)) {
+          g.poly(ps).fill((gx + gy) % 2 ? 0xead7a4 : 0xe1cc95);
+        } else if (isRoadCell(gx, gy)) {
+          g.poly(ps).fill(0x9aa3ab);
+        } else {
+          const v = r();
+          const base = (gx + gy) % 2 ? 0x7fc35f : 0x76b956;
+          g.poly(ps).fill(v < 0.12 ? shade(base, 1.06) : v > 0.92 ? shade(base, 0.95) : base);
+        }
       }
     }
-    c.addChild(this.foam, g);
-    return c;
+    // road edges + centre dashes
+    const lines = ROAD_LINES as readonly number[];
+    for (const c of lines) {
+      for (let k = SAND_RING; k < N - SAND_RING; k++) {
+        if (lines.includes(k)) continue;
+        // column road c (varying gy)
+        const a = toWorld({ gx: c + 0.5, gy: k + 0.2 });
+        const b = toWorld({ gx: c + 0.5, gy: k + 0.6 });
+        g.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1.6, color: 0xf4f1e6, alpha: 0.9 });
+        const a2 = toWorld({ gx: k + 0.2, gy: c + 0.5 });
+        const b2 = toWorld({ gx: k + 0.6, gy: c + 0.5 });
+        g.moveTo(a2.x, a2.y).lineTo(b2.x, b2.y).stroke({ width: 1.6, color: 0xf4f1e6, alpha: 0.9 });
+      }
+      // kerbs
+      for (const off of [0, 1]) {
+        const p0 = toWorld({ gx: c + off, gy: SAND_RING });
+        const p1 = toWorld({ gx: c + off, gy: N - SAND_RING });
+        g.moveTo(p0.x, p0.y).lineTo(p1.x, p1.y).stroke({ width: 1.2, color: 0xd9dde0, alpha: 0.9 });
+        const q0 = toWorld({ gx: SAND_RING, gy: c + off });
+        const q1 = toWorld({ gx: N - SAND_RING, gy: c + off });
+        g.moveTo(q0.x, q0.y).lineTo(q1.x, q1.y).stroke({ width: 1.2, color: 0xd9dde0, alpha: 0.9 });
+      }
+    }
+    // crosswalk squares at intersections
+    for (const a of lines)
+      for (const b of lines) {
+        const c = toWorld({ gx: a + 0.5, gy: b + 0.5 });
+        g.poly([{ x: c.x, y: c.y - 4 }, { x: c.x + 8, y: c.y }, { x: c.x, y: c.y + 4 }, { x: c.x - 8, y: c.y }]).fill({ color: 0xffffff, alpha: 0.35 });
+      }
+    this.ground.addChild(g, this.foam);
   }
 
-  private buildStreets() {
+  private buildPlaza() {
+    const o = blockOrigin(PLAZA_BLOCK.bx, PLAZA_BLOCK.by);
     const g = new Graphics();
-    g.rect(ISLAND.x + 4, 228, ISLAND.w - 8, 38).fill(0xd9c39a);
-    g.rect(300, 104, 44, 258).fill(0xd9c39a);
-    g.ellipse(320, 322, 74, 31).fill(0xd9c39a).stroke({ width: 3, color: 0xbfa171 });
-    g.rect(ISLAND.x + 4, 228, ISLAND.w - 8, 4).fill(0xbfa171);
-    g.rect(ISLAND.x + 4, 262, ISLAND.w - 8, 4).fill(0xbfa171);
-    g.rect(300, 104, 4, 124).fill(0xbfa171);
-    g.rect(340, 104, 4, 124).fill(0xbfa171);
-    g.rect(300, 266, 4, 30).fill(0xbfa171);
-    g.rect(340, 266, 4, 30).fill(0xbfa171);
-    for (let x = 30; x < 610; x += 22) {
-      if (x > 296 && x < 348) continue;
-      g.moveTo(x, 233).lineTo(x, 261).stroke({ width: 1, color: 0xb8996a, alpha: 0.35 });
-    }
-    for (let y = 112; y < 226; y += 18) g.moveTo(305, y).lineTo(339, y).stroke({ width: 1, color: 0xb8996a, alpha: 0.35 });
-    this.ground.addChild(g);
-
-    // fountain
+    for (let x = 0; x < 6; x++)
+      for (let y = 0; y < 6; y++) {
+        const ring = x === 0 || y === 0 || x === 5 || y === 5;
+        g.poly(tile(o.gx + x, o.gy + y)).fill(ring ? 0x7fc35f : (x + y) % 2 ? 0xe9e2d0 : 0xdcd3bd);
+      }
+    const c = toWorld({ gx: o.gx + 3, gy: o.gy + 3 });
     const f = new Container();
-    f.position.set(FOUNTAIN.x, FOUNTAIN.y);
+    f.position.set(c.x, c.y);
     for (let k = 0; k < 2; k++) {
-      const rp = new Graphics();
-      rp.ellipse(0, 0, 16, 6).stroke({ width: 1.2, color: 0xe8f4f7 });
+      const rp = new Graphics().ellipse(0, 0, 18, 9).stroke({ width: 1.4, color: 0xe8f4f7 });
       this.fountainRipples.push(rp);
       f.addChild(rp);
     }
     const basin = new Graphics();
-    basin.ellipse(0, 2, 20, 8).fill(0x8f7b58);
-    basin.ellipse(0, 0, 18, 7).fill(0xa89470);
-    basin.ellipse(0, 0, 15, 5.5).fill(0x7fb6c4);
-    this.shimmer = new Graphics();
-    this.shimmer.ellipse(0, 0, 6, 1.6).fill(0xd8eef3);
-    this.shimmer.position.set(-4, -1);
-    this.jet = new Graphics();
-    this.jet.roundRect(-1.6, -14, 3.2, 14, 1.6).fill(0xd8eef3);
-    f.addChild(basin, this.shimmer, this.jet);
-    this.ground.addChild(f);
+    basin.ellipse(0, 3, 24, 12).fill(0x9a8f78);
+    basin.ellipse(0, 0, 22, 11).fill(0xbfb59c);
+    basin.ellipse(0, 0, 18, 9).fill(0x6fb8d6);
+    this.jet = new Graphics().roundRect(-2, -18, 4, 18, 2).fill(0xdff1f7);
+    f.addChild(basin, this.jet);
+    f.zIndex = c.y;
+    this.ground.addChild(g);
+    this.depth.addChild(f);
   }
 
-  private buildProps() {
-    for (const t of TREES) {
-      const c = new Container();
-      c.position.set(t.x, t.y);
-      c.scale.set(t.s);
-      c.zIndex = t.y;
-      const sh = new Graphics().ellipse(0, 0, 14, 5).fill({ color: 0x000000, alpha: 0.16 });
-      const crown = new Container();
-      const g = new Graphics();
-      g.rect(-2.5, -16, 5, 16).fill(0x7a5a3a);
-      g.circle(0, -27, 14).fill(0x4f7a40);
-      g.circle(-7, -21, 9).fill(0x5f8a4e);
-      g.circle(6, -31, 8).fill(0x6f9a5c);
-      g.circle(-3, -34, 5).fill({ color: 0x8cbf72, alpha: 0.8 });
-      crown.addChild(g);
-      c.addChild(sh, crown);
-      this.depth.addChild(c);
-      this.trees.push({ c: crown, p: t.p });
+  private buildFillers() {
+    const r = seeded(31);
+    const keyBlocks = new Set(Object.values(KEY_BLOCKS).map((b) => `${b.bx},${b.by}`));
+    for (let bx = 0; bx < 3; bx++)
+      for (let by = 0; by < 3; by++) {
+        if (keyBlocks.has(`${bx},${by}`) || (bx === PLAZA_BLOCK.bx && by === PLAZA_BLOCK.by)) continue;
+        const o = blockOrigin(bx, by);
+        for (let px = 0; px < 3; px++)
+          for (let py = 0; py < 3; py++) {
+            const gx = o.gx + px * 2;
+            const gy = o.gy + py * 2;
+            const v = r();
+            if (v < 0.5) this.addTower(gx, gy, 2, 40 + Math.floor(r() * 80), r);
+            else if (v < 0.82) this.addHouse(gx, gy, 2, r);
+            else this.addTree(toWorld({ gx: gx + 1, gy: gy + 1 }), 0.9 + r() * 0.3, r() * TAU);
+          }
+      }
+    // outer ring between the coast and the first road: low houses
+    for (let k = 5; k < GRID_N - 5; k += 3) {
+      if (r() < 0.55) this.addHouse(2, k, 2, r);
+      if (r() < 0.55) this.addHouse(k, 2, 2, r);
     }
-    for (const l of LAMPS) {
+  }
+
+  private addTower(gx: number, gy: number, size: number, h: number, r: () => number) {
+    const c = toWorld({ gx: gx + size / 2, gy: gy + size / 2 });
+    const def = { cx: c.x, cy: c.y, hw: (size * TILE_W) / 2 - 6, wallH: h, roof: "flat" as const } as BuildingDef;
+    const g0 = isoGeometry({ ...def, roofColor: "#000", id: "home", name: "", description: "", waypoint: { x: 0, y: 0 } });
+    const { L, B, R, Lt, Bt, Rt, Tt } = g0;
+    const g = new Graphics();
+    g.ellipse(c.x, c.y + 4, def.hw, def.hw * 0.5).fill({ color: 0x000000, alpha: 0.14 });
+    g.poly([L, B, Bt, Lt]).fill(0xf2f5f8).stroke({ width: 1.5, color: INK, alpha: 0.85 });
+    g.poly([R, B, Bt, Rt]).fill(0xc9d4e0).stroke({ width: 1.5, color: INK, alpha: 0.85 });
+    const band = (a: Pt, b: Pt, y: number, col: number) =>
+      g.poly([{ x: a.x, y: a.y - y }, { x: b.x, y: b.y - y }, { x: b.x, y: b.y - y - 4 }, { x: a.x, y: a.y - y - 4 }]).fill(col);
+    band(L, B, 3, 0x2f5d9f);
+    band(B, R, 3, 0x244a80);
+    for (let y = 14; y < h - 6; y += 11) {
+      for (const [a, b, col] of [
+        [L, B, 0x9cc3ea],
+        [B, R, 0x86add6],
+      ] as const) {
+        for (const t of [0.18, 0.42, 0.66]) {
+          const w = winPts(a, b, t, t + 0.14, y, 6);
+          g.poly(w).fill(col);
+        }
+      }
+    }
+    const lift = (p: Pt) => ({ x: p.x, y: p.y - 4 });
+    const roofCol = r() < 0.75 ? 0x3f6fb5 : 0x5c6b7a;
+    g.poly([Lt, Bt, lift(Bt), lift(Lt)]).fill(shade(roofCol, 0.85));
+    g.poly([Bt, Rt, lift(Rt), lift(Bt)]).fill(shade(roofCol, 0.7));
+    g.poly([lift(Lt), lift(Tt), lift(Rt), lift(Bt)]).fill(roofCol).stroke({ width: 1.5, color: INK, alpha: 0.85 });
+    g.poly(inset([lift(Lt), lift(Tt), lift(Rt), lift(Bt)], 0.3)).fill(shade(roofCol, 1.2));
+    g.zIndex = c.y;
+    this.depth.addChild(g);
+  }
+
+  private addHouse(gx: number, gy: number, size: number, r: () => number) {
+    const c = toWorld({ gx: gx + size / 2, gy: gy + size / 2 });
+    const hw = (size * TILE_W) / 2 - 10;
+    const wallH = 18 + Math.floor(r() * 8);
+    const geo = isoGeometry({ cx: c.x, cy: c.y, hw, wallH, roof: "hip", roofColor: "#000", id: "home", name: "", description: "", waypoint: { x: 0, y: 0 } });
+    const { L, B, R, Lt, Bt, Rt, apex } = geo;
+    const roofCol = r() < 0.6 ? 0x3f6fb5 : r() < 0.5 ? 0xc96f4a : 0x5a8f4e;
+    const g = new Graphics();
+    g.ellipse(c.x, c.y + 3, hw, hw * 0.5).fill({ color: 0x000000, alpha: 0.14 });
+    g.poly([L, B, Bt, Lt]).fill(0xf4efe4).stroke({ width: 1.4, color: INK, alpha: 0.85 });
+    g.poly([R, B, Bt, Rt]).fill(0xd8d0bf).stroke({ width: 1.4, color: INK, alpha: 0.85 });
+    g.poly(winPts(L, B, 0.3, 0.55, wallH * 0.3, 7)).fill(0x86add6);
+    g.poly(winPts(B, R, 0.45, 0.7, wallH * 0.3, 7)).fill(0x7aa0c8);
+    const o = (p: Pt) => ({ x: c.x + (p.x - c.x) * 1.1, y: c.y - wallH + (p.y - c.y + wallH) * 1.1 + 1 });
+    const a = { x: apex.x, y: apex.y + 6 };
+    g.poly([a, o(Lt), o(Bt)]).fill(roofCol).stroke({ width: 1.4, color: INK, alpha: 0.85, join: "round" });
+    g.poly([a, o(Bt), o(Rt)]).fill(shade(roofCol, 0.8)).stroke({ width: 1.4, color: INK, alpha: 0.85, join: "round" });
+    g.zIndex = c.y;
+    this.depth.addChild(g);
+  }
+
+  private addTree(p: Pt, s: number, phase: number) {
+    const c = new Container();
+    c.position.set(p.x, p.y);
+    c.scale.set(s);
+    c.zIndex = p.y;
+    const sh = new Graphics().ellipse(0, 0, 10, 5).fill({ color: 0x000000, alpha: 0.18 });
+    const crown = new Container();
+    const g = new Graphics();
+    g.rect(-2, -12, 4, 12).fill(0x7a5a3a);
+    g.circle(0, -20, 10).fill(0x3f8a3a);
+    g.circle(-5, -16, 6).fill(0x4f9a46);
+    g.circle(4, -24, 5.5).fill(0x67b05a);
+    crown.addChild(g);
+    c.addChild(sh, crown);
+    this.depth.addChild(c);
+    this.trees.push({ c: crown, p: phase });
+  }
+
+  private buildTreesAndLamps() {
+    const r = seeded(43);
+    // ring trees around key plots and the plaza
+    for (const id of Object.keys(KEY_BLOCKS) as BuildingId[]) {
+      const o = blockOrigin(KEY_BLOCKS[id].bx, KEY_BLOCKS[id].by);
+      for (const [x, y] of [
+        [0, 0],
+        [5, 0],
+        [0, 5],
+        [5, 5],
+        [0, 2.5],
+        [2.5, 0],
+      ])
+        this.addTree(toWorld({ gx: o.gx + x + 0.5, gy: o.gy + y + 0.5 }), 0.85 + r() * 0.3, r() * TAU);
+    }
+    const po = blockOrigin(PLAZA_BLOCK.bx, PLAZA_BLOCK.by);
+    for (const [x, y] of [
+      [0, 0],
+      [5, 0],
+      [0, 5],
+      [5, 5],
+    ])
+      this.addTree(toWorld({ gx: po.gx + x + 0.5, gy: po.gy + y + 0.5 }), 1, r() * TAU);
+    // coastal palms/trees on grass near sand
+    for (let k = 0; k < 26; k++) {
+      const edge = r() < 0.5;
+      const gx = edge ? 2 + r() * 1.6 : 3 + r() * (GRID_N - 6);
+      const gy = edge ? 3 + r() * (GRID_N - 6) : 2 + r() * 1.6;
+      const [x, y] = r() < 0.5 ? [gx, gy] : [GRID_N - gx, GRID_N - gy];
+      if (isRoadCell(Math.floor(x), Math.floor(y))) continue;
+      this.addTree(toWorld({ gx: x, gy: y }), 0.8 + r() * 0.3, r() * TAU);
+    }
+    // street lamps at intersections around the plaza
+    const lines = ROAD_LINES as readonly number[];
+    for (const [a, b] of [
+      [lines[1], lines[1]],
+      [lines[2], lines[1]],
+      [lines[1], lines[2]],
+      [lines[2], lines[2]],
+    ]) {
+      const p = toWorld({ gx: a + 0.08, gy: b + 0.08 });
       const c = new Container();
-      c.position.set(l.x, l.y);
-      c.zIndex = l.y;
-      const glow = new Graphics().circle(0, -24, 10).fill(0xffe7a3);
+      c.position.set(p.x, p.y);
+      c.zIndex = p.y;
+      const glow = new Graphics().circle(0, -22, 9).fill(0xffe7a3);
       const g = new Graphics();
-      g.moveTo(0, 0).lineTo(0, -22).stroke({ width: 2, color: 0x4a4438 });
-      g.circle(0, -24, 3.4).fill(0xfff4cc).stroke({ width: 1, color: 0x4a4438 });
+      g.moveTo(0, 0).lineTo(0, -20).stroke({ width: 2, color: 0x3a3f44 });
+      g.circle(0, -22, 3).fill(0xfff4cc).stroke({ width: 1, color: 0x3a3f44 });
       c.addChild(glow, g);
       this.glows.push(glow);
       this.depth.addChild(c);
     }
+    // lighthouse on the left coast
+    const lp = toWorld({ gx: 0.9, gy: 22.5 });
+    const lh = new Container();
+    lh.position.set(lp.x, lp.y);
+    lh.zIndex = lp.y;
+    const lg = new Graphics();
+    lg.ellipse(0, 0, 10, 5).fill({ color: 0x000000, alpha: 0.2 });
+    lg.poly([{ x: -7, y: 0 }, { x: 7, y: 0 }, { x: 5, y: -42 }, { x: -5, y: -42 }]).fill(0xf4f1ea).stroke({ width: 1.4, color: INK });
+    lg.poly([{ x: -6.4, y: -12 }, { x: 6.4, y: -12 }, { x: 6, y: -20 }, { x: -6, y: -20 }]).fill(0xc9442f);
+    lg.poly([{ x: -5.6, y: -28 }, { x: 5.6, y: -28 }, { x: 5.3, y: -35 }, { x: -5.3, y: -35 }]).fill(0xc9442f);
+    lg.rect(-6, -50, 12, 8).fill(0x2f3a44);
+    lg.poly([{ x: -7, y: -50 }, { x: 7, y: -50 }, { x: 0, y: -57 }]).fill(0xc9442f).stroke({ width: 1.2, color: INK });
+    this.beam = new Graphics().circle(0, -46, 5).fill(0xffe48a);
+    lh.addChild(lg, this.beam);
+    this.depth.addChild(lh);
   }
 
-  private buildBuilding(def: BuildingDef, index: number) {
+  private buildKeyBuilding(def: BuildingDef, index: number) {
     const geo = isoGeometry(def);
     const { cx, cy, hw, wallH, roof, roofColor } = def;
-    const { hh, roofH, L, B, R, T, Lt, Bt, Rt, Tt, apex } = geo;
+    const { hh, roofH, L, B, R, Lt, Bt, Rt, Tt, apex } = geo;
     const studio = def.id === "studio";
-    const wallL = studio ? 0xe8f1ee : 0xf3e6cf;
-    const wallR = studio ? 0xcfe0da : 0xe2cba4;
+    const wallL = studio ? 0xe6f2ee : 0xf6f1e6;
+    const wallR = studio ? 0xc6ddd5 : 0xdcd2bf;
 
     const root = new Container();
-    root.zIndex = B.y;
-    const shadow = new Graphics().ellipse(0, 0, hw * 1.05, hh * 0.6).fill({ color: 0x000000, alpha: 0.16 });
-    shadow.position.set(cx, cy + hh * 0.55);
+    root.zIndex = cy;
+    const under = new Container();
+    const shadow = new Graphics().ellipse(0, 0, hw * 1.05, hh * 0.65).fill({ color: 0x000000, alpha: 0.16 });
+    shadow.position.set(cx, cy + 6);
     const body = new Container();
     body.pivot.set(cx, B.y);
     body.position.set(cx, B.y);
 
     const g = new Graphics();
-    // walls with foundation band and plank hints
+    // plinth
+    const pad = (p: Pt, d: number) => ({ x: cx + (p.x - cx) * d, y: cy + (p.y - cy) * d });
+    g.poly([pad(L, 1.08), pad(B, 1.08), pad(R, 1.08), pad(geo.T, 1.08)]).fill(0xd9d4c7).stroke({ width: 1.2, color: INK, alpha: 0.6 });
     g.poly([L, B, Bt, Lt]).fill(wallL).stroke({ width: 2, color: INK, join: "round" });
     g.poly([R, B, Bt, Rt]).fill(wallR).stroke({ width: 2, color: INK, join: "round" });
     const up = (p: Pt, d: number) => ({ x: p.x, y: p.y - d });
-    g.poly([L, B, up(B, 6), up(L, 6)]).fill(shade(wallL, 0.78));
-    g.poly([B, R, up(R, 6), up(B, 6)]).fill(shade(wallR, 0.78));
-    for (const f of [0.33, 0.66]) {
-      const a = { x: lerp(L.x, B.x, f), y: lerp(L.y, B.y, f) };
-      const b = { x: lerp(R.x, B.x, f), y: lerp(R.y, B.y, f) };
-      g.moveTo(a.x, a.y - 6).lineTo(a.x, a.y - wallH).stroke({ width: 1, color: INK, alpha: 0.12 });
-      g.moveTo(b.x, b.y - 6).lineTo(b.x, b.y - wallH).stroke({ width: 1, color: INK, alpha: 0.12 });
-    }
+    g.poly([L, B, up(B, 7), up(L, 7)]).fill(shade(wallL, 0.8));
+    g.poly([B, R, up(R, 7), up(B, 7)]).fill(shade(wallR, 0.8));
     g.moveTo(Lt.x, Lt.y).lineTo(Bt.x, Bt.y).lineTo(Rt.x, Rt.y).stroke({ width: 2, color: INK });
 
-    // windows: frame, glass, mullion, sill
-    const lift = wallH * 0.35;
+    const lift = wallH * 0.42;
     const wins = [
-      winPts(L, B, 0.16, 0.38, lift),
-      winPts(L, B, 0.58, 0.8, lift),
-      winPts(R, B, 0.16, 0.36, lift),
-      winPts(R, B, 0.62, 0.82, lift),
+      winPts(L, B, 0.12, 0.3, lift, 14),
+      winPts(L, B, 0.42, 0.6, lift, 14),
+      winPts(L, B, 0.72, 0.9, lift, 14),
+      winPts(R, B, 0.1, 0.26, lift, 14),
+      winPts(R, B, 0.74, 0.9, lift, 14),
     ];
     const lit: Graphics[] = [];
     for (const w of wins) {
       g.poly(w).fill(0xfff4dc).stroke({ width: 1.2, color: INK, alpha: 0.8 });
       const glass = inset(w, 0.22);
       g.poly(glass).fill(0x3d5a6c);
-      g.moveTo((glass[0].x + glass[1].x) / 2, (glass[0].y + glass[1].y) / 2)
-        .lineTo((glass[2].x + glass[3].x) / 2, (glass[2].y + glass[3].y) / 2)
-        .stroke({ width: 1, color: 0xfff4dc, alpha: 0.9 });
       g.moveTo(w[3].x - 1, w[3].y + 1.5).lineTo(w[2].x + 1, w[2].y + 1.5).stroke({ width: 2, color: 0x8a7a5c });
       const l = new Graphics().poly(glass).fill(0xf6d27a);
       l.alpha = 0;
       lit.push(l);
     }
 
-    // door on the front-right wall, hinged on its left edge
-    const dh = Math.min(18, wallH * 0.32);
+    // door on the front-right wall, facing the worker's road
+    const dh = Math.min(22, wallH * 0.3);
     const p0 = { x: lerp(B.x, R.x, 0.42), y: lerp(B.y, R.y, 0.42) };
-    const p1 = { x: lerp(B.x, R.x, 0.56), y: lerp(B.y, R.y, 0.56) };
+    const p1 = { x: lerp(B.x, R.x, 0.58), y: lerp(B.y, R.y, 0.58) };
     g.poly([p0, p1, up(p1, dh + 2), up(p0, dh + 2)]).fill(0x2f2a22);
-    g.poly([{ x: p0.x - 2, y: p0.y + 2 }, { x: p1.x + 2, y: p1.y + 1 }, { x: p1.x + 4, y: p1.y + 4 }, { x: p0.x, y: p0.y + 5 }]).fill(0xb7a17c);
     const door = new Graphics();
     const rel = (p: Pt) => ({ x: p.x - p0.x, y: p.y - p0.y });
     door.poly([rel(p0), rel(p1), rel(up(p1, dh)), rel(up(p0, dh))]).fill(0x9a6a43).stroke({ width: 1, color: 0x5c3a22 });
-    door.circle(rel(p1).x - 2.5, rel(p1).y - dh / 2, 1).fill(0xe8c33a);
+    door.circle(rel(p1).x - 3, rel(p1).y - dh / 2, 1.2).fill(0xe8c33a);
     door.position.set(p0.x, p0.y);
 
-    // roof
     const r = new Graphics();
     const eaveY = cy - wallH;
-    const o = (p: Pt) => ({ x: cx + (p.x - cx) * 1.09, y: eaveY + (p.y - eaveY) * 1.09 + 1.5 });
+    const o = (p: Pt) => ({ x: cx + (p.x - cx) * 1.08, y: eaveY + (p.y - eaveY) * 1.08 + 1.5 });
     if (roof === "hip") {
       const [oL, oB, oR] = [o(Lt), o(Bt), o(Rt)];
       r.poly([apex, oL, oB]).fill(roofColor).stroke({ width: 2, color: INK, join: "round" });
-      r.poly([apex, oB, oR]).fill(shade(roofColor, 0.84)).stroke({ width: 2, color: INK, join: "round" });
+      r.poly([apex, oB, oR]).fill(shade(roofColor, 0.82)).stroke({ width: 2, color: INK, join: "round" });
       for (const f of [0.22, 0.44, 0.66]) {
         for (const [a, b] of [
           [oL, oB],
@@ -597,37 +887,33 @@ export class CityEngine {
       r.moveTo(apex.x, apex.y).lineTo(oB.x, oB.y).stroke({ width: 1.5, color: 0xffffff, alpha: 0.35 });
       if (def.id === "home") {
         const x0 = cx + hw * 0.28;
-        const top = apex.y + roofH * 0.25;
-        r.rect(x0, top, 9, 26).fill(0x9a8a6c).stroke({ width: 1.5, color: INK });
-        r.poly([{ x: x0 + 9, y: top }, { x: x0 + 14, y: top - 2.5 }, { x: x0 + 14, y: top + 23.5 }, { x: x0 + 9, y: top + 26 }])
-          .fill(0x7d6f55)
-          .stroke({ width: 1.5, color: INK });
-        r.poly([{ x: x0, y: top }, { x: x0 + 5, y: top - 2.5 }, { x: x0 + 14, y: top - 2.5 }, { x: x0 + 9, y: top }]).fill(0x5c564a);
+        const top = apex.y + roofH * 0.3;
+        r.rect(x0, top, 10, 28).fill(0x9a8a6c).stroke({ width: 1.5, color: INK });
+        r.poly([{ x: x0, y: top }, { x: x0 + 5, y: top - 2.5 }, { x: x0 + 15, y: top - 2.5 }, { x: x0 + 10, y: top }]).fill(0x5c564a);
       }
     } else {
-      // flat roof with a parapet (front faces are thin bands, not full walls)
-      const lift6 = (p: Pt) => up(p, 6);
+      const lift6 = (p: Pt) => up(p, 7);
       r.poly([Lt, Bt, lift6(Bt), lift6(Lt)]).fill(shade(roofColor, 0.82)).stroke({ width: 1.5, color: INK });
-      r.poly([Bt, Rt, lift6(Rt), lift6(Bt)]).fill(shade(roofColor, 0.7)).stroke({ width: 1.5, color: INK });
+      r.poly([Bt, Rt, lift6(Rt), lift6(Bt)]).fill(shade(roofColor, 0.68)).stroke({ width: 1.5, color: INK });
       r.poly([lift6(Lt), lift6(Tt), lift6(Rt), lift6(Bt)]).fill(roofColor).stroke({ width: 2, color: INK, join: "round" });
-      r.poly(inset([lift6(Lt), lift6(Tt), lift6(Rt), lift6(Bt)], 0.14)).fill(shade(roofColor, 0.9));
-      void T;
+      r.poly(inset([lift6(Lt), lift6(Tt), lift6(Rt), lift6(Bt)], 0.16)).fill(shade(roofColor, 1.15));
     }
 
     const decor = new Container();
     body.addChild(g, ...lit, door, r, decor);
-    root.addChild(shadow, body);
+    root.addChild(shadow, under, body);
     this.depth.addChild(root);
 
     const plate = new Container();
-    plate.position.set(cx, cy + hh + 22);
+    plate.position.set(cx, cy + hh + 16);
     const plateBg = new Graphics();
-    const plateText = text(def.name, 13, "#2e2a24", "700", false);
+    const plateText = label(def.name.toUpperCase(), 10, "#e9eef2", "700", false);
     plate.addChild(plateBg, plateText);
-    const tag = text("", 12, TAG_COLORS.info);
-    const tp = this.tagPos(def);
-    tag.anchor.set(tp.ax, 0.5);
-    tag.position.set(tp.x, tp.y);
+    const tag = new Container();
+    tag.position.set(cx, cy + hh + 36);
+    const tagBg = new Graphics();
+    const tagText = label("", 10, TAG_COLORS.info, "700", false);
+    tag.addChild(tagBg, tagText);
     tag.visible = false;
     this.ui.addChild(plate, tag);
 
@@ -641,10 +927,13 @@ export class CityEngine {
       lit,
       door,
       decor,
+      under,
       plate,
       plateBg,
       plateText,
       tag,
+      tagBg,
+      tagText,
       hover: 0,
       press: 0,
       doorStart: null,
@@ -653,86 +942,95 @@ export class CityEngine {
     this.views.set(def.id, v);
   }
 
-  private tagPos(def: BuildingDef): { x: number; y: number; ax: number } {
-    if (def.id === "studio") return { x: def.cx, y: 30, ax: 0.5 };
-    if (def.id === "registry") return { x: def.cx + 78, y: 10, ax: 1 };
-    return { x: def.cx, y: 12, ax: 0.5 };
+  private drawPlate(v: BuildingView, selected: boolean) {
+    const w = v.plateText.width + 16;
+    v.plateBg.clear();
+    v.plateBg.rect(-w / 2 + 2, -8, w, 18).fill({ color: 0x000000, alpha: 0.25 });
+    v.plateBg
+      .rect(-w / 2, -10, w, 18)
+      .fill(selected ? 0xf0a92b : 0x14212b)
+      .stroke({ width: 1.5, color: selected ? 0xffd27a : 0x3a5566 });
+    v.plateText.style.fill = selected ? "#111a20" : "#e9eef2";
+    v.plateText.y = -1;
   }
 
-  private drawPlate(v: BuildingView, selected: boolean) {
-    const w = v.plateText.width + 18;
-    v.plateBg.clear();
-    v.plateBg.roundRect(-w / 2 + 2, -9, w, 20, 6).fill({ color: 0x000000, alpha: 0.18 });
-    v.plateBg
-      .roundRect(-w / 2, -11, w, 20, 6)
-      .fill(selected ? 0x2e2a24 : 0xfffaf0)
-      .stroke({ width: 1.5, color: selected ? 0xf2c14e : 0x6e5a3a });
-    v.plateText.style.fill = selected ? "#ffffff" : "#2e2a24";
-    v.plateText.y = -1;
+  private drawTag(v: BuildingView, tag: BuildingTag | null) {
+    v.tag.visible = tag !== null;
+    if (!tag) return;
+    v.tagText.text = tag.text.toUpperCase();
+    v.tagText.style.fill = TAG_COLORS[tag.tone];
+    const w = v.tagText.width + 14;
+    const bg = { info: 0xe3eef9, ok: 0xe0f3e6, warn: 0xfdf1d8, muted: 0xeceae4 }[tag.tone];
+    const edge = { info: 0x1f4f7a, ok: 0x1d5a38, warn: 0xb06a00, muted: 0x77736a }[tag.tone];
+    v.tagBg.clear();
+    v.tagBg.rect(-w / 2, -9, w, 17).fill(bg).stroke({ width: 1.5, color: edge });
+    v.tagText.y = -1;
   }
 
   private buildSky() {
     for (const [y, rx, ry, speed, off] of [
-      [110, 90, 34, 9, 0.2],
-      [300, 120, 40, 7, 0.65],
-      [210, 70, 26, 11, 0.9],
+      [80, 120, 44, 9, 0.2],
+      [320, 160, 52, 7, 0.65],
+      [520, 100, 36, 11, 0.9],
     ] as const) {
-      const g = new Graphics().ellipse(0, 0, rx, ry).fill({ color: 0x1d2b14, alpha: 0.08 });
-      g.y = y;
-      this.clouds.push({ g, speed, off });
-      this.sky.addChild(g);
+      const g = new Graphics().ellipse(0, 0, rx, ry).fill({ color: 0x0b1a10, alpha: 0.08 });
+      this.clouds.push({ g, speed, off, y });
+      this.ui.addChild(g);
     }
     this.birds = new Container();
     for (let k = 0; k < 3; k++) {
       const b = new Graphics();
-      b.moveTo(-5, 0).quadraticCurveTo(-2.5, -3, 0, 0).quadraticCurveTo(2.5, -3, 5, 0).stroke({ width: 1.4, color: 0x3a3a32, cap: "round" });
+      b.moveTo(-5, 0).quadraticCurveTo(-2.5, -3, 0, 0).quadraticCurveTo(2.5, -3, 5, 0).stroke({ width: 1.4, color: 0x2a2f2a, cap: "round" });
       b.position.set(k * 11, k === 1 ? -6 : 0);
       this.birdWings.push(b);
       this.birds.addChild(b);
     }
-    this.boat = new Container();
-    const hull = new Graphics();
-    hull.poly([{ x: -14, y: 0 }, { x: 14, y: 0 }, { x: 9, y: 6 }, { x: -9, y: 6 }]).fill(0x9a6a43).stroke({ width: 1.5, color: INK });
-    hull.moveTo(0, 0).lineTo(0, -20).stroke({ width: 1.5, color: INK });
-    hull.poly([{ x: 1, y: -19 }, { x: 12, y: -3 }, { x: 1, y: -3 }]).fill(0xfaf6ec).stroke({ width: 1, color: INK });
-    this.boat.addChild(hull);
-    this.boat.y = VIEWBOX.h - 12;
-    this.world.addChildAt(this.boat, 1);
-    this.sky.addChild(this.birds);
+    this.ui.addChild(this.birds);
+    const boat = (sail: number) => {
+      const c = new Container();
+      const g = new Graphics();
+      g.poly([{ x: -14, y: 0 }, { x: 14, y: 0 }, { x: 9, y: 6 }, { x: -9, y: 6 }]).fill(0x9a6a43).stroke({ width: 1.4, color: INK });
+      g.moveTo(0, 0).lineTo(0, -20).stroke({ width: 1.4, color: INK });
+      g.poly([{ x: 1, y: -19 }, { x: 12, y: -3 }, { x: 1, y: -3 }]).fill(sail).stroke({ width: 1, color: INK });
+      g.moveTo(-18, 7).lineTo(-26, 7).stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
+      c.addChild(g);
+      this.ground.addChild(c);
+      return c;
+    };
+    this.boats.push({ c: boat(0xfaf6ec), a: { x: -900, y: 700 }, b: { x: 200, y: 1150 }, period: 80, off: 0.2 });
+    this.boats.push({ c: boat(0xf0a92b), a: { x: 1100, y: -120 }, b: { x: 300, y: -420 }, period: 95, off: 0.6 });
   }
 
   private buildWorker() {
     const w = this.worker;
-    const shadow = new Graphics().ellipse(0, 0, 11, 4.5).fill({ color: 0x000000, alpha: 0.28 });
-    const leg = (g: Graphics) => g.roundRect(-2, 0, 4, 11, 2).fill(0x3b3226);
+    const shadow = new Graphics().ellipse(0, 0, 11, 4.5).fill({ color: 0x000000, alpha: 0.3 });
+    const leg = (g: Graphics) => g.roundRect(-2, 0, 4, 11, 2).fill(0x2b2f36);
     leg(this.wLegL).position.set(-3, -11);
     leg(this.wLegR).position.set(3, -11);
-    const arm = (g: Graphics) => g.roundRect(-1.8, 0, 3.6, 10, 1.8).fill(0x2d5b8a);
+    const arm = (g: Graphics) => g.roundRect(-1.8, 0, 3.6, 10, 1.8).fill(0xc9761f);
     arm(this.wArmL).position.set(-7.5, -23);
     arm(this.wArmR).position.set(7.5, -23);
     const torso = new Graphics();
-    torso.roundRect(-7.5, -25, 15, 16, 5).fill(0x3d6fa8).stroke({ width: 1.5, color: 0x23405f });
-    torso.rect(-7.5, -13, 15, 2.5).fill(0x6e4a2a);
-    torso.circle(3, -18, 1.2).fill(0xf2c14e);
+    torso.roundRect(-7.5, -25, 15, 16, 4).fill(0xf0a92b).stroke({ width: 1.5, color: 0x7a4d0e });
+    torso.rect(-7.5, -18, 15, 2).fill(0xfff2c8);
+    torso.rect(-7.5, -13, 15, 2.5).fill(0x3b3226);
     const head = this.wHead;
     head.position.set(0, -31);
     const hg = new Graphics();
     hg.circle(0, 0, 6.5).fill(0xf0c49a).stroke({ width: 1.5, color: 0x8a5a3b });
     hg.circle(2.6, -0.5, 1).fill(0x2e2a24);
     hg.circle(-0.6, -0.5, 1).fill(0x2e2a24);
-    hg.roundRect(-7, -8, 13, 5, 2.5).fill(0xe0b13a).stroke({ width: 1.2, color: 0x7a5c0e });
-    hg.roundRect(3, -5, 7, 2.2, 1).fill(0xc99a26);
+    hg.poly([{ x: -7.5, y: -3 }, { x: 7.5, y: -3 }, { x: 5, y: -9 }, { x: -5, y: -9 }]).fill(0xf2c53d).stroke({ width: 1.2, color: 0x7a5c0e });
+    hg.rect(-8.5, -4, 17, 2).fill(0xe0b13a);
     head.addChild(hg);
     this.wCarry.position.set(9, -24);
     this.wBody.addChild(this.wArmL, torso, head, this.wCarry, this.wArmR);
     this.wFace.addChild(this.wLegL, this.wLegR, this.wBody);
 
-    // unresolved: amber bubble (static, slow pulse)
     const ab = new Graphics();
     ab.circle(0, 0, 8.5).fill(0xe8a33a).stroke({ width: 1.5, color: 0x7a4d0e });
-    this.wAlert.addChild(ab, text("!", 12, "#3d2c05", "800", false));
+    this.wAlert.addChild(ab, label("!", 12, "#3d2c05", "700", false));
     this.wAlert.position.set(14, -46);
-    // waiting: thought bubble with three dots
     const wb = new Graphics();
     wb.roundRect(-13, -8, 26, 15, 7).fill(0xffffff).stroke({ width: 1.2, color: 0x6b665c });
     wb.circle(-6, 10, 2).fill(0xffffff).stroke({ width: 1, color: 0x6b665c });
@@ -744,7 +1042,7 @@ export class CityEngine {
     }
     this.wWait.position.set(14, -48);
     w.addChild(shadow, this.wFace, this.wAlert, this.wWait);
-    w.scale.set(1.12);
+    w.scale.set(1.25);
     this.depth.addChild(w);
   }
 
@@ -767,6 +1065,11 @@ export class CityEngine {
     this.wWait.visible = city.worker.pose === "waiting";
   }
 
+  private questBase(id: BuildingId): Pt {
+    const v = this.views.get(id)!;
+    return { x: v.def.cx, y: v.geo.apex.y - (id === "registry" ? 52 : id === "treasury" ? 44 : 22) };
+  }
+
   private drawQuest(q: CityState["quest"]) {
     this.quest.visible = q !== null;
     if (!q) return;
@@ -778,54 +1081,35 @@ export class CityEngine {
     const [bg, fg, sym] = colors[q.kind];
     this.questBg.clear();
     this.questBg.poly([{ x: -5, y: 9 }, { x: 5, y: 9 }, { x: 0, y: 16 }]).fill(bg).stroke({ width: 1.5, color: INK });
-    this.questBg.roundRect(-10, -11, 20, 21, 7).fill(bg).stroke({ width: 1.8, color: INK });
+    this.questBg.rect(-10, -11, 20, 21).fill(bg).stroke({ width: 2, color: INK });
     this.questText.text = sym;
     this.questText.style.fill = fg;
     this.questText.y = sym === "…" ? -4 : -0.5;
-    const p = this.questPos(q.building);
+    const p = this.questBase(q.building);
     this.quest.position.set(p.x, p.y);
   }
 
-  private questPos(id: BuildingId): Pt {
-    const v = this.views.get(id)!;
-    const { cx } = v.def;
-    const apex = v.geo.apex;
-    switch (id) {
-      case "registry":
-        return { x: cx - 34, y: apex.y - 6 };
-      case "treasury":
-        return { x: cx - 36, y: apex.y + 18 };
-      case "studio":
-        return { x: cx - 30, y: apex.y - 2 };
-      case "home":
-        return { x: cx - 40, y: apex.y + 8 };
-      case "archive":
-        return { x: cx, y: apex.y - 18 };
-    }
-  }
-
   private buildDecor(city: CityState) {
-    for (const v of this.views.values()) v.decor.removeChildren().forEach((c) => c.destroy({ children: true }));
+    for (const v of this.views.values()) {
+      v.decor.removeChildren().forEach((c) => c.destroy({ children: true }));
+      v.under.removeChildren().forEach((c) => c.destroy({ children: true }));
+    }
     const d = emptyDecor();
 
     // Planning Desk: chimney smoke + private parcel (lock icon only)
     {
       const v = this.views.get("home")!;
-      const { def, geo } = v;
-      const cxm = def.cx + def.hw * 0.28 + 5;
-      const top = geo.apex.y + geo.roofH * 0.25 - 4;
       for (let k = 0; k < 3; k++) {
         const p = new Graphics().circle(0, 0, 4 + k).fill(0xeeeae2);
-        p.position.set(cxm, top);
         d.puffs.push(p);
         v.decor.addChild(p);
       }
       if (city.planning.privateParcel) {
         const g = new Graphics();
-        const x = geo.R.x + 2;
-        const y = geo.R.y + 14;
-        g.roundRect(x, y, 16, 12, 1.5).fill(0xc9a26b).stroke({ width: 1.2, color: 0x5c3a22 });
-        g.roundRect(x + 4.5, y + 5, 7, 5.5, 1).fill(0x5c564a);
+        const x = v.geo.R.x - 6;
+        const y = v.geo.R.y + 4;
+        g.rect(x, y, 16, 12).fill(0xc9a26b).stroke({ width: 1.2, color: 0x5c3a22 });
+        g.rect(x + 4.5, y + 5, 7, 5.5).fill(0x5c564a);
         g.moveTo(x + 6, y + 5).lineTo(x + 6, y + 3.4).arc(x + 8, y + 3.4, 2, Math.PI, 0).lineTo(x + 10, y + 5).stroke({ width: 1.2, color: 0x5c564a });
         v.decor.addChild(g);
       }
@@ -835,48 +1119,40 @@ export class CityEngine {
     {
       const v = this.views.get("studio")!;
       const { def, geo } = v;
-      const base = new Graphics();
-      const dx = geo.apex.x + 20;
-      const dy = geo.apex.y + 14;
-      base.moveTo(dx, dy).lineTo(dx, dy - 9).stroke({ width: 2, color: 0x4a4438 });
+      const dx = geo.apex.x + 24;
+      const dy = geo.apex.y + 18;
+      const base = new Graphics().moveTo(dx, dy).lineTo(dx, dy - 10).stroke({ width: 2, color: 0x3a3f44 });
       const dish = new Graphics();
-      dish.ellipse(0, 0, 8, 4.5).fill(0xe8f1ee).stroke({ width: 1.4, color: 0x4a4438 });
-      dish.circle(0, 0, 1.4).fill(0x4a4438);
-      dish.position.set(dx, dy - 12);
+      dish.ellipse(0, 0, 9, 5).fill(0xe8f1ee).stroke({ width: 1.4, color: 0x3a3f44 });
+      dish.circle(0, 0, 1.5).fill(0x3a3f44);
+      dish.position.set(dx, dy - 13);
       v.decor.addChild(base, dish);
       d.dish = dish;
       if (city.studio === "running") {
         for (let k = 0; k < 5; k++) {
-          const dot = new Graphics().roundRect(0, 0, k % 2 ? 4 : 2.5, 2, 1).fill(0x1f7a70);
+          const dot = new Graphics().rect(0, 0, k % 2 ? 4 : 2.5, 2).fill(0x1f7a70);
           dot.position.set(geo.apex.x - 12 + k * 6, geo.apex.y - 4);
           d.dataDots.push(dot);
           v.decor.addChild(dot);
         }
       }
       if (city.studio === "failed" || city.studio === "interrupted") {
-        const amber = new Graphics().ellipse(0, 0, def.hw * 1.1, geo.hh * 0.7).fill(0xe8a33a);
-        amber.position.set(def.cx, def.cy + geo.hh * 0.55);
-        v.root.addChildAt(amber, 1);
+        const amber = new Graphics().ellipse(0, 0, def.hw * 1.15, geo.hh * 1.15).fill(0xe8a33a);
+        amber.position.set(def.cx, def.cy);
+        v.under.addChild(amber);
         d.amber = amber;
-      }
-    }
-    // remove stale amber from earlier states
-    {
-      const studio = this.views.get("studio")!;
-      for (const child of [...studio.root.children]) {
-        if (child !== studio.shadow && child !== studio.body && child !== d.amber) child.destroy();
       }
     }
 
     // Release Desk: neutral approval emblem (document + check), stamp on approval
     {
       const v = this.views.get("treasury")!;
-      const x = v.def.cx + 14;
-      const y = 30;
-      const post = new Graphics().moveTo(x + 8, y + 20).lineTo(x + 8, y + 27).stroke({ width: 2, color: 0x6e3a22 });
+      const x = v.geo.apex.x - 8;
+      const y = v.geo.apex.y - 30;
+      const post = new Graphics().moveTo(x + 8, y + 20).lineTo(x + 8, v.geo.apex.y + 2).stroke({ width: 2, color: 0x6e3a22 });
       const emblem = new Container();
       const e = new Graphics();
-      e.roundRect(x, y, 16, 20, 2).fill(0xfdfbf3).stroke({ width: 1.5, color: 0x5c564a });
+      e.rect(x, y, 16, 20).fill(0xfdfbf3).stroke({ width: 1.5, color: 0x5c564a });
       e.moveTo(x + 3, y + 5).lineTo(x + 13, y + 5).stroke({ width: 1.2, color: 0x9a917f });
       e.moveTo(x + 4, y + 12).lineTo(x + 7, y + 15).lineTo(x + 12, y + 9).stroke({ width: 1.6, color: 0x5c564a, cap: "round" });
       emblem.addChild(e);
@@ -905,56 +1181,55 @@ export class CityEngine {
       const v = this.views.get("registry")!;
       const { geo } = v;
       const ax = geo.apex.x;
-      const top = geo.apex.y - 24;
-      const r = city.registry;
+      const top = geo.apex.y - 26;
+      const reg = city.registry;
       const hall = [geo.L, geo.B, geo.R, geo.Rt, geo.apex, geo.Lt];
-      if (r === "expired") {
+      if (reg === "expired") {
         const grey = new Graphics().poly(hall).fill(0x7d7d76);
         grey.alpha = 0.55;
         v.decor.addChild(grey);
       }
-      if (r === "unavailable") {
+      if (reg === "unavailable") {
         const m = new Graphics().poly(hall).fill({ color: 0xf3efe6, alpha: 0.6 });
         dashedPoly(m, hall, 5, 4);
         m.stroke({ width: 2, color: 0x6b665c });
         v.decor.addChild(m);
       }
-      const mast = new Graphics().moveTo(ax, geo.apex.y).lineTo(ax, top + 4).stroke({ width: 2.5, color: 0x4a4438 });
-      v.decor.addChild(mast);
-      if (r === "pending") {
+      v.decor.addChild(new Graphics().moveTo(ax, geo.apex.y).lineTo(ax, top + 4).stroke({ width: 2.5, color: 0x3a3f44 }));
+      if (reg === "pending") {
         const orbit = new Graphics();
-        dashedEllipse(orbit, 0, 0, 10, 10, 0, 1);
+        dashedCircle(orbit, 0, 0, 11);
         orbit.stroke({ width: 2, color: 0x1a5fb4, cap: "round" });
         orbit.position.set(ax, top);
         v.decor.addChild(orbit);
         d.orbit = orbit;
       }
-      if (r === "live" || r === "stale") {
+      if (reg === "live" || reg === "stale") {
         const b = new Graphics();
-        b.circle(0, 0, 9).fill({ color: 0x7fd6c4, alpha: 0.45 });
-        b.circle(0, 0, 5).fill(r === "stale" ? 0x9a9a90 : 0x1f9d7a).stroke({ width: 1.2, color: 0x145c48 });
+        b.circle(0, 0, 10).fill({ color: 0x7fd6c4, alpha: 0.45 });
+        b.circle(0, 0, 5.5).fill(reg === "stale" ? 0x9a9a90 : 0x1f9d7a).stroke({ width: 1.2, color: 0x145c48 });
         b.position.set(ax, top);
-        b.alpha = r === "stale" ? 0.45 : 1;
+        b.alpha = reg === "stale" ? 0.45 : 1;
         v.decor.addChild(b);
       }
-      if (r === "live") {
+      if (reg === "live") {
         const scan = new Graphics().circle(0, 0, 10).stroke({ width: 2, color: 0x1f9d7a });
         scan.position.set(ax, top);
         scan.alpha = 0;
         v.decor.addChild(scan);
         d.scan = scan;
       }
-      if (r === "unavailable") {
+      if (reg === "unavailable") {
         const u = new Graphics();
-        dashedEllipse(u, ax, top, 5, 5, 0, 1);
+        dashedCircle(u, ax, top, 5.5, 8);
         u.stroke({ width: 1.5, color: 0x6b665c });
         v.decor.addChild(u);
       }
-      if (r === "expired") v.decor.addChild(new Graphics().circle(ax, top, 5).fill(0x9a9a90).stroke({ width: 1.2, color: 0x5c5a52 }));
-      if (r === "closed") {
+      if (reg === "expired") v.decor.addChild(new Graphics().circle(ax, top, 5.5).fill(0x9a9a90).stroke({ width: 1.2, color: 0x5c5a52 }));
+      if (reg === "closed") {
         const f = new Graphics();
         f.poly([{ x: ax + 1, y: geo.apex.y - 12 }, { x: ax + 15, y: geo.apex.y - 9 }, { x: ax + 1, y: geo.apex.y - 4 }]).fill(0xc96f4a).stroke({ width: 1, color: 0x6e3a22 });
-        f.circle(ax, top + 3, 2.5).fill(0x4a4438);
+        f.circle(ax, top + 3, 2.5).fill(0x3a3f44);
         v.decor.addChild(f);
       }
     }
@@ -962,8 +1237,8 @@ export class CityEngine {
     // Archive: stack of boxes once a private brief exists
     if (city.archive.boxes) {
       const v = this.views.get("archive")!;
-      const x = v.geo.R.x + 6;
-      const y = v.geo.R.y + 26;
+      const x = v.geo.R.x - 10;
+      const y = v.geo.R.y + 8;
       const c = new Container();
       const box = (bx: number, by: number) => {
         const g = new Graphics();
@@ -984,6 +1259,10 @@ export class CityEngine {
 
   // ---------- frame update (writes display objects only) ----------
 
+  private requestRender() {
+    if (this.mode !== "on") this.app.render();
+  }
+
   private renderStatic() {
     if (this.mode === "on") return;
     this.update(0);
@@ -998,64 +1277,63 @@ export class CityEngine {
     const wave = (period: number, phase = 0) => (anim ? Math.sin((t / period + phase) * TAU) : 0);
     const loop = (period: number, phase = 0) => (anim ? (((t / period + phase) % 1) + 1) % 1 : 0);
 
-    // parallax (eased)
-    const px = this.parallax;
-    px.x += (px.tx - px.x) * (anim ? 0.08 : 1);
-    px.y += (px.ty - px.y) * (anim ? 0.08 : 1);
-    this.sky.position.set(px.x * 5, px.y * 3);
-    this.world.position.set(px.x * -1.5, px.y * -1);
-
     // A. ambient
     for (const w of this.waves) {
-      w.g.x = w.x + wave(6, w.p) * 6;
-      w.g.alpha = 0.35 + 0.45 * (anim ? (wave(3.4, w.p) + 1) / 2 : 0.5);
+      w.g.x = w.x + wave(6, w.p) * 7;
+      w.g.alpha = 0.25 + 0.55 * (anim ? (wave(3.4, w.p) + 1) / 2 : 0.5);
     }
-    this.foam.alpha = 0.45 + 0.3 * (anim ? (wave(4.5) + 1) / 2 : 0.5);
+    this.foam.alpha = 0.45 + 0.35 * (anim ? (wave(4.5) + 1) / 2 : 0.5);
     this.trees.forEach((tr) => {
-      tr.c.skew.x = wave(5.5, tr.p / TAU) * 0.035;
+      tr.c.skew.x = wave(5.5, tr.p / TAU) * 0.04;
     });
     this.glows.forEach((g, i) => {
-      g.alpha = 0.22 + 0.2 * (anim ? (wave(4.2, i * 0.27) + 1) / 2 : 0.5);
+      g.alpha = 0.22 + 0.22 * (anim ? (wave(4.2, i * 0.27) + 1) / 2 : 0.5);
     });
-    this.jet.scale.y = anim ? 0.86 + 0.14 * wave(0.9) : 1;
-    this.shimmer.x = -4 + wave(3.2) * 4;
+    this.jet.scale.y = anim ? 0.85 + 0.15 * wave(0.9) : 1;
     this.fountainRipples.forEach((r, k) => {
       const f = loop(2.6, k * 0.5);
       r.scale.set(0.5 + f);
       r.alpha = anim ? 0.8 * (1 - f) : 0;
     });
+    this.beam.alpha = anim ? 0.35 + 0.65 * Math.max(0, Math.sin(t * 1.6)) : 1;
     this.clouds.forEach((c) => {
-      c.g.x = -180 + (anim ? ((t / (100 / c.speed) + c.off) % 1) * 1000 : c.off * 1000);
+      c.g.position.set(-900 + (anim ? ((t / (140 / c.speed) + c.off) % 1) * 1900 : c.off * 1900), c.y);
       c.g.visible = anim;
     });
-    const bf = loop(42, 0.3);
-    this.birds.position.set(-60 + bf * 760, 70 - bf * 46);
+    const bf = loop(48, 0.3);
+    this.birds.position.set(-700 + bf * 1500, 80 - bf * 160);
     this.birds.visible = anim;
     this.birdWings.forEach((b, k) => {
       b.scale.y = anim ? 0.35 + 0.65 * Math.abs(Math.sin(t * 5 + k)) : 1;
     });
-    const boatF = loop(70, 0.15);
-    this.boat.x = anim ? -40 + boatF * 720 : 470;
-    this.boat.y = VIEWBOX.h - 12 + wave(2.6) * 1.5;
-    this.boat.rotation = wave(3.1) * 0.05;
+    for (const b of this.boats) {
+      const f = anim ? loop(b.period, b.off) : b.off;
+      b.c.position.set(lerp(b.a.x, b.b.x, f), lerp(b.a.y, b.b.y, f) + wave(2.6, b.off) * 1.5);
+      b.c.scale.x = b.b.x < b.a.x ? -1 : 1;
+      b.c.rotation = wave(3.1, b.off) * 0.05;
+    }
 
     // C. building states
     const city = this.city;
     const d = this.decor;
+    const home = this.views.get("home")!;
+    const chimX = home.def.cx + home.def.hw * 0.28 + 5;
+    const chimY = home.geo.apex.y + home.geo.roofH * 0.3 - 4;
     d.puffs.forEach((p, k) => {
       const f = loop(4.2, k / 3);
-      p.position.set(this.views.get("home")!.def.cx + this.views.get("home")!.def.hw * 0.28 + 5 + f * 8, this.views.get("home")!.geo.apex.y + this.views.get("home")!.geo.roofH * 0.25 - 4 - f * 26);
+      p.position.set(chimX + f * 9, chimY - f * 28);
       p.scale.set(0.6 + f * 0.9);
       p.alpha = anim ? (f < 0.15 ? (f / 0.15) * 0.75 : 0.75 * (1 - (f - 0.15) / 0.85)) : 0;
     });
     const running = city?.studio === "running";
     if (d.dish) d.dish.scale.x = running && anim ? Math.cos(t * 2.6) : 1;
+    const studioApex = this.views.get("studio")!.geo.apex.y;
     d.dataDots.forEach((dot, k) => {
       const f = loop(2.2, k / 5);
-      dot.y = this.views.get("studio")!.geo.apex.y - 4 - f * 18;
+      dot.y = studioApex - 4 - f * 20;
       dot.alpha = anim ? (f < 0.2 ? f / 0.2 : 1 - (f - 0.2) / 0.8) * 0.9 : 0.6;
     });
-    if (d.amber) d.amber.alpha = 0.32 + 0.18 * wave(4.8);
+    if (d.amber) d.amber.alpha = 0.3 + 0.18 * wave(4.8);
     for (const v of this.views.values()) {
       const lit = v.def.id === "home" ? city?.planning.lit === true : false;
       v.lit.forEach((l, i) => {
@@ -1092,11 +1370,10 @@ export class CityEngine {
       const pop = popF >= 1 ? 1 : easeOutBack(popF);
       const p = Math.sin(v.press * Math.PI);
       v.body.scale.set((0.86 + 0.14 * pop) * (1 + 0.04 * p), (0.86 + 0.14 * pop) * (1 - 0.06 * p));
-      v.body.y = v.geo.B.y - 4 * v.hover + (1 - pop) * 8;
+      v.body.y = v.geo.B.y - 5 * v.hover + (1 - pop) * 8;
       v.root.alpha = popF;
       v.shadow.scale.set(1 + 0.08 * v.hover);
-      v.plate.alpha = popF * (0.9 + 0.1 * Math.max(v.hover, this.selected === v.def.id ? 1 : 0));
-      v.plate.y = v.def.cy + v.geo.hh + 22 - 2 * v.hover;
+      v.plate.alpha = popF;
       v.tag.alpha = popF;
       let open = 0;
       if (v.doorStart !== null) {
@@ -1107,13 +1384,20 @@ export class CityEngine {
       v.door.scale.x = 1 - 0.8 * open;
     }
 
-    // selection ring: draw-in, then very slow rotation
+    // selection: amber dashed diamond that draws in, then crawls slowly
     this.selRing.clear();
     if (this.selected) {
-      const v = this.views.get(this.selected)!;
-      const drawF = clamp01((now - this.selStart) / 650);
-      dashedEllipse(this.selRing, v.def.cx, v.def.cy + v.geo.hh * 0.55, v.def.hw * 1.18, v.geo.hh * 0.78, anim ? t / 40 : 0, drawF);
-      this.selRing.stroke({ width: 3, color: 0x1a5fb4, cap: "round" });
+      const p = KEY_PLOTS[this.selected];
+      const m = 0.45;
+      const ring = [
+        toWorld({ gx: p.gx - m, gy: p.gy - m }),
+        toWorld({ gx: p.gx + p.size + m, gy: p.gy - m }),
+        toWorld({ gx: p.gx + p.size + m, gy: p.gy + p.size + m }),
+        toWorld({ gx: p.gx - m, gy: p.gy + p.size + m }),
+      ];
+      this.selRing.poly(ring).fill({ color: 0xf0a92b, alpha: 0.16 });
+      dashedPoly(this.selRing, ring, 10, 6, anim ? t * 6 : 0, clamp01((now - this.selStart) / 650));
+      this.selRing.stroke({ width: 3, color: 0xf0a92b, cap: "round" });
     }
     for (let i = this.ripples.length - 1; i >= 0; i--) {
       const r = this.ripples[i];
@@ -1124,41 +1408,49 @@ export class CityEngine {
         this.ripples.splice(i, 1);
         continue;
       }
-      r.g.ellipse(0, 0, 30 + f * 60, 12 + f * 24).stroke({ width: 3, color: 0xffffff, alpha: 0.8 * (1 - f) });
+      r.g.ellipse(0, 0, 50 + f * 70, 25 + f * 35).stroke({ width: 3, color: 0xffffff, alpha: 0.8 * (1 - f) });
     }
 
-    // quest marker bounce
     if (this.quest.visible && city?.quest) {
-      const base = this.questPos(city.quest.building);
+      const base = this.questBase(city.quest.building);
       const bounce = city.quest.kind === "action" ? Math.abs(wave(1.4)) * 6 : wave(3) * 2;
       this.quest.y = base.y - bounce;
       this.quest.alpha = anim ? clamp01((now - 500) / 400) : 1;
     }
 
-    this.updateWorker(dt, anim, t);
+    this.updateWorker(anim, t);
   }
 
-  private updateWorker(dt: number, anim: boolean, t: number) {
+  private updateWorker(anim: boolean, t: number) {
     const city = this.city;
     let moving = false;
+    let pos = toWorld(this.wGrid);
     if (this.walk) {
       const w = this.walk;
       const f = anim ? clamp01((this.t - w.start) / w.dur) : 1;
-      const p = pointAlong(w.path, easeInOut(f));
-      if (p.dx !== 0) this.wFace.scale.x = p.dx < 0 ? -1 : 1;
-      const step = Math.hypot(p.x - this.wPos.x, p.y - this.wPos.y);
-      this.stride += step;
-      this.wPos = { x: p.x, y: p.y };
+      let dist = easeInOut(f) * w.total;
+      let k = 0;
+      while (k < w.lens.length - 1 && dist > w.lens[k]) dist -= w.lens[k++];
+      const seg = w.lens[k] || 1;
+      const u = clamp01(dist / seg);
+      const a = w.world[k];
+      const b = w.world[k + 1] ?? a;
+      const ga = w.path[k];
+      const gb = w.path[k + 1] ?? ga;
+      const next = { x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u) };
+      if (Math.abs(b.x - a.x) > 0.01) this.wFace.scale.x = b.x < a.x ? -1 : 1;
+      this.stride += Math.hypot(next.x - pos.x, next.y - pos.y);
+      pos = next;
+      this.wGrid = { gx: lerp(ga.gx, gb.gx, u), gy: lerp(ga.gy, gb.gy, u) };
       moving = f < 1;
       if (f >= 1) {
+        this.wGrid = { ...w.path[w.path.length - 1] };
         if (w.to && anim) this.views.get(w.to)!.doorStart = this.t;
         this.walk = null;
       }
     }
-    this.worker.position.set(this.wPos.x, this.wPos.y);
-    // Waypoints sit on the street behind front buildings; keep the worker visible.
-    this.worker.zIndex = 10_000;
-    void dt;
+    this.worker.position.set(pos.x, pos.y);
+    this.worker.zIndex = pos.y + 1;
 
     const pose = city?.worker.pose ?? "idle";
     const stalled = pose === "stalled";
@@ -1173,13 +1465,11 @@ export class CityEngine {
       this.wHead.x = 0;
     } else {
       this.wLegL.rotation = this.wLegR.rotation = 0;
-      const breathe = anim && !stalled ? Math.sin(t * 2) * 0.6 : 0;
-      this.wBody.y = breathe;
+      this.wBody.y = anim && !stalled ? Math.sin(t * 2) * 0.6 : 0;
       this.wArmL.rotation = stalled ? 0.2 : 0.08;
       this.wArmR.rotation = stalled ? -0.2 : pose === "working" && anim ? -0.3 + Math.sin(t * 3) * 0.15 : -0.08;
       this.wBody.rotation = stalled ? -0.16 : 0;
-      const look = anim && !stalled ? ((t % 9) / 9 > 0.78 ? Math.sin(((t % 9) - 7) * 3) * 1.6 : 0) : 0;
-      this.wHead.x = look;
+      this.wHead.x = anim && !stalled && (t % 9) / 9 > 0.78 ? Math.sin(((t % 9) - 7) * 3) * 1.6 : 0;
       this.wHead.y = stalled ? -29.5 : -31;
     }
     this.wAlert.alpha = 0.7 + 0.3 * (anim ? (Math.sin(t * 1.3) + 1) / 2 : 1);

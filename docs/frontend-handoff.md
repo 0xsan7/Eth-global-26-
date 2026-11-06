@@ -107,18 +107,18 @@ What Agent A must merge or do next:
 - Not done: `src/app/page.tsx` never sets `reopened`, so the worker never goes to the
   Archive yet. Worker at Archive needs a page-level flag (outside the city files).
 
-### Game renderer (PixiJS)
+### Emulator-style city (PixiJS, full screen)
 
-- Added `pixi.js` 8.22.0 (exact). `src/components/city/pixi/city-engine.ts` draws the city
-  procedurally on a WebGL canvas (canvas fallback): floating island with cliffs, water,
-  waves and foam, detailed buildings, a character with walk cycle, particles, boat, birds
-  and cloud shadows. Quest markers come from the pure `CityState.quest` (tested).
-- The engine only reads `CityState`; it has no callbacks into React, the API or the wallet.
-  It is loaded with a dynamic import on the client. The SVG scene is the server render and
-  the fallback if the engine fails, and keeps the layout size so nothing shifts.
-- Accessibility: transparent HTML buttons over each building (Enter/Space, focus
-  outline, state in the accessible name); the toolbar and aria-live status are unchanged.
-  Reduced motion renders a single static frame per state change; a hidden tab or an
-  off-screen scene stops the Pixi ticker.
-- The worker uses engine-only standing spots on the street (`STAND`) so it never hides
-  behind nameplates; the mapping still decides which building it belongs to.
+- `/` is a full-screen game view: `src/components/city/pixi/city-engine.ts` draws an isometric
+  tile island (grass checkerboard, road grid, sand coast, sea, filler towers/houses, lighthouse,
+  boats) with drag-to-pan, wheel/pinch zoom and +/−/reset buttons. Fonts: Space Mono + Inter
+  (`@fontsource`), no network font requests. Dark HUD theme only (the light/dark toggle is gone).
+- `src/components/city/iso-layout.ts` (pure, tested) owns the grid, plots and street-only worker
+  routes (`isoRoute`: along the current road, at most two turns). `iso-buildings.ts` gives the key
+  building geometry to both the engine and the HTML hit layer.
+- HUD windows (`src/components/hud/HudWindow.tsx`) float over the map: City scan (top-left),
+  Next step with the aria-live status and the existing next-action handler (bottom-left), and the
+  BriefMint console (right) holding wallet, nav, building tabs and the existing `CityPanel`.
+- The engine only reads `CityState`. Camera moves write a CSS transform onto the hit layer; no
+  React state per frame. Fixture previews never get green/live colouring on tags or chips.
+- Narrow screens: the map becomes a 62vh viewport and the windows stack below it.

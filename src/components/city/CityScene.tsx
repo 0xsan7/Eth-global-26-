@@ -1,9 +1,10 @@
 "use client";
-// CityScene: React + SVG + CSS neighbourhood. Five buildings plus one worker.
-// Every visual derives from `scene.city` (pure mapping of persisted state).
-// Animation is decoration only: no callback here reads or writes brief state.
+// Full-screen city "emulator": the PixiJS island fills the viewport and HUD windows
+// float over it. Every visual derives from `scene.city` (pure mapping of persisted
+// state); no animation or camera callback reads or writes brief state.
 import "./city.css";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import HudWindow from "@/components/hud/HudWindow";
 import { ArchiveDecor, PlanningDecor, RegistryDecor, ReleaseDecor, StudioDecor, type SceneFx } from "./BuildingDecor";
 import { GroundAmbient, SkyAmbient } from "./CityAmbient";
 import IsoBuilding from "./IsoBuilding";
@@ -11,16 +12,32 @@ import Worker from "./Worker";
 import { sceneFromCityState, type BriefSceneTarget } from "./brief-state-to-scene";
 import { CITY_FIXTURES } from "./city-fixtures";
 import { deriveCityState, type CityState } from "./city-state";
-import { isoGeometry } from "./iso-geometry";
-import type { CityEngine, MotionMode } from "./pixi/city-engine";
+import { keyBuildingBox } from "./iso-buildings";
+import type { CameraState, CityEngine, MotionMode } from "./pixi/city-engine";
 import { stateLabelFor, tagFor, type BuildingTag } from "./scene-labels";
 import { BUILDINGS, BUILDINGS_BACK_TO_FRONT, VIEWBOX, type BuildingDef, type BuildingId } from "./scene-config";
+
+export interface ScanStats {
+  opportunities: number;
+  open: number;
+  loading: boolean;
+  stale: boolean;
+  error: boolean;
+}
 
 interface CitySceneProps {
   selected: BuildingId | null;
   onSelect: (b: BuildingId) => void;
   scene: BriefSceneTarget;
-  jobStatusLabel: string | null;
+  scan: ScanStats;
+  /** Next real action (existing handlers only). */
+  action: { label: string; run: () => void; busy?: boolean } | null;
+  idleHint: string;
+  notice?: ReactNode;
+  /** Wallet + navigation shown at the top of the console window. */
+  consoleTop?: ReactNode;
+  /** The selected building's panel. */
+  children: ReactNode;
 }
 
 const NO_FX: SceneFx = { stamp: null, stampKey: 0, scanKey: 0, boxesKey: 0 };
@@ -29,10 +46,7 @@ const FIXTURE_PREFIX = "DEV FIXTURE (not real data): ";
 /** One-shot effects only for transitions observed on the same brief while the page is open. */
 function nextFx(prev: CityState, next: CityState, fx: SceneFx): SceneFx {
   if (next.briefId === null) return NO_FX;
-  if (prev.briefId !== next.briefId) {
-    // A saved brief appearing slides the archive boxes in; nothing else replays.
-    return { ...NO_FX, boxesKey: prev.briefId === null ? fx.boxesKey + 1 : 0 };
-  }
+  if (prev.briefId !== next.briefId) return { ...NO_FX, boxesKey: prev.briefId === null ? fx.boxesKey + 1 : 0 };
   let out = fx;
   if (prev.release !== "approved" && next.release === "approved") out = { ...out, stamp: "in", stampKey: out.stampKey + 1 };
   if (prev.release === "approved" && next.release !== "approved") out = { ...out, stamp: "out", stampKey: out.stampKey + 1 };
@@ -63,17 +77,9 @@ function decorFor(def: BuildingDef, city: CityState, fx: SceneFx): ReactNode {
   }
 }
 
-/** Hit area over a building in the canvas, as viewBox percentages. */
-function hitRect(def: BuildingDef) {
-  const g = isoGeometry(def);
-  const top = g.apex.y - 10;
-  const bottom = def.cy + g.hh + 34;
-  return {
-    left: `${((def.cx - def.hw) / VIEWBOX.w) * 100}%`,
-    top: `${(top / VIEWBOX.h) * 100}%`,
-    width: `${((def.hw * 2) / VIEWBOX.w) * 100}%`,
-    height: `${((bottom - top) / VIEWBOX.h) * 100}%`,
-  };
+/** Mirrors the camera onto the HTML hit layer (DOM write only, no React state per frame). */
+function applyHitTransform(el: HTMLElement | null, c: CameraState) {
+  if (el) el.style.transform = `translate(${c.x}px, ${c.y}px) scale(${c.z})`;
 }
 
 const subscribeNoop = () => () => {};
@@ -85,10 +91,42 @@ function useFixtureEnabled(): boolean {
   );
 }
 
-export default function CityScene({ selected, onSelect, scene: realScene, jobStatusLabel }: CitySceneProps) {
+const DIM_LABELS: Array<{ key: string; label: string; value: (c: CityState) => string; tone: (c: CityState) => string }> = [
+  {
+    key: "exec",
+    label: "Compile",
+    value: (c) => (c.briefId === null ? "none" : c.studio === "idle" ? (c.planning.lit ? "draft" : "done") : c.studio),
+    tone: (c) => (c.worker.unresolved ? "warn" : c.studio === "running" ? "info" : "plain"),
+  },
+  {
+    key: "review",
+    label: "Review",
+    value: (c) => (c.release === "idle" ? "—" : c.release),
+    tone: (c) => (c.release === "approved" ? "ok" : c.release === "awaiting" ? "info" : "plain"),
+  },
+  {
+    key: "pub",
+    label: "Publish",
+    value: (c) => (c.registry === "none" ? "—" : c.registry),
+    tone: (c) =>
+      c.registry === "live" ? "ok" : c.registry === "stale" || c.registry === "unavailable" ? "warn" : c.registry === "pending" ? "info" : "plain",
+  },
+];
+
+export default function CityScene({
+  selected,
+  onSelect,
+  scene: realScene,
+  scan,
+  action,
+  idleHint,
+  notice,
+  consoleTop,
+  children,
+}: CitySceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const groundRef = useRef<SVGGElement>(null);
-  const skyRef = useRef<SVGGElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const hitsRef = useRef<HTMLDivElement | null>(null);
   const fixtureEnabled = useFixtureEnabled();
   const [fixtureId, setFixtureId] = useState<string | null>(null);
   const fixture = fixtureEnabled && fixtureId ? CITY_FIXTURES.find((f) => f.id === fixtureId) ?? null : null;
@@ -104,23 +142,23 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
     fx = nextFx(prev.city, city, prev.fx);
     setPrev({ key: cityKey, city, fx });
   }
-
-  const isFixture = Boolean(fixture);
   // Identity changes only when the derived state content changes.
   const stableCity = prev.city;
-  const hostRef = useRef<HTMLDivElement>(null);
+  const isFixture = Boolean(fixture);
+
   const engineRef = useRef<CityEngine | null>(null);
   const modeRef = useRef<MotionMode>("on");
   const [engineReady, setEngineReady] = useState(false);
 
-  // Game renderer (PixiJS) loads client-side only; on any failure the SVG scene stays.
+  // Game renderer loads client-side only; on any failure the SVG scene stays.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
     let engine: CityEngine | null = null;
+    const onCamera = (c: CameraState) => applyHitTransform(hitsRef.current, c);
     import("./pixi/city-engine")
-      .then(({ CityEngine }) => CityEngine.create(host))
+      .then(({ CityEngine }) => CityEngine.create(host, { onCamera }))
       .then((e) => {
         if (cancelled) {
           e.destroy();
@@ -141,7 +179,7 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
     };
   }, []);
 
-  // Push the derived state to the renderer. The renderer never writes state back.
+  // Push derived state to the renderer. The renderer never writes state back.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engineReady || !engine) return;
@@ -186,95 +224,44 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
     };
   }, []);
 
-  // Subtle pointer parallax on scenery layers only (mouse, motion on). Writes DOM transforms.
-  const parallaxRaf = useRef<number | null>(null);
-  const setParallax = (dx: number, dy: number) => {
-    if (parallaxRaf.current !== null) cancelAnimationFrame(parallaxRaf.current);
-    parallaxRaf.current = requestAnimationFrame(() => {
-      parallaxRaf.current = null;
-      groundRef.current?.setAttribute("transform", `translate(${dx * 2} ${dy * 1.5})`);
-      skyRef.current?.setAttribute("transform", `translate(${dx * 5} ${dy * 3})`);
-    });
-  };
-  useEffect(
-    () => () => {
-      if (parallaxRaf.current !== null) cancelAnimationFrame(parallaxRaf.current);
-    },
-    [],
-  );
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType !== "mouse" || rootRef.current?.getAttribute("data-anim") !== "on") return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
-    const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
-    if (engineRef.current) engineRef.current.setParallax(dx, dy);
-    else setParallax(dx, dy);
+  const select = (id: BuildingId) => {
+    if (engineRef.current?.consumeDrag()) return;
+    onSelect(id);
+    engineRef.current?.ping(id);
   };
 
+  const fixtureWindow = fixtureEnabled ? (
+    <HudWindow title="Dev fixture" hint="not real data" className="hud-window--danger">
+      <label className="hud-field">
+        <span className="hud-label">Preview a scene state</span>
+        <select value={fixtureId ?? ""} onChange={(e) => setFixtureId(e.target.value || null)}>
+          <option value="">off (real state)</option>
+          {CITY_FIXTURES.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </HudWindow>
+  ) : null;
+
   return (
-    <div className="city-scene" ref={rootRef} data-anim="on" data-engine={engineReady ? "ready" : "svg"}>
-      {/* Keyboard-accessible building navigation (buttons). */}
-      <nav className="city-toolbar" aria-label="City buildings">
-        {BUILDINGS_BACK_TO_FRONT.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            className="btn"
-            aria-pressed={selected === b.id}
-            onClick={() => onSelect(b.id)}
-          >
-            {b.name}
-          </button>
-        ))}
-      </nav>
-      {fixtureEnabled && (
-        <div className="city-fixture" role="group" aria-label="Development fixture preview — not real data">
-          <strong>DEV FIXTURE — not real data:</strong>{" "}
-          <select
-            value={fixtureId ?? ""}
-            onChange={(e) => setFixtureId(e.target.value || null)}
-            aria-label="Preview a fixture scene state"
-          >
-            <option value="">off (real state)</option>
-            {CITY_FIXTURES.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div
-        className="city-frame"
-        onPointerMove={onPointerMove}
-        onPointerLeave={() => {
-          setParallax(0, 0);
-          engineRef.current?.setParallax(0, 0);
-        }}
-      >
+    <div className="game" ref={rootRef} data-anim="on" data-engine={engineReady ? "ready" : "svg"}>
+      <div className="game-world" ref={hostRef}>
         <svg
+          className="game-fallback"
           viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
+          preserveAspectRatio="xMidYMid meet"
           role="group"
-          aria-label="Tool City neighbourhood map. Five buildings around paved streets with one document worker."
+          aria-label="Tool City map. Five buildings around paved streets with one document worker."
         >
-          <desc>
-            {`Registry Hall, Release Desk and AI Studio stand at the back; the Planning Desk and the Archive at the front. `}
-            {statusText}
-          </desc>
-          {/* terrain */}
+          <desc>{statusText}</desc>
           <rect x={0} y={0} width={VIEWBOX.w} height={VIEWBOX.h} fill="#9db38a" />
-          <ellipse cx={110} cy={330} rx={120} ry={60} fill="#8aa176" />
-          <ellipse cx={560} cy={90} rx={140} ry={70} fill="#8aa176" />
-          {/* streets: warm paving */}
           <rect x={0} y={228} width={VIEWBOX.w} height={38} fill="#d9c39a" />
-          <rect x={0} y={228} width={VIEWBOX.w} height={4} fill="#bfa171" />
-          <rect x={0} y={262} width={VIEWBOX.w} height={4} fill="#bfa171" />
           <rect x={300} y={110} width={44} height={252} fill="#d9c39a" />
-          <rect x={300} y={110} width={4} height={252} fill="#bfa171" />
-          <rect x={340} y={110} width={4} height={252} fill="#bfa171" />
           <ellipse cx={320} cy={322} rx={72} ry={30} fill="#d9c39a" stroke="#bfa171" strokeWidth={3} />
-          <GroundAmbient layerRef={groundRef} />
-          {/* buildings back-to-front */}
+          <GroundAmbient />
           {BUILDINGS_BACK_TO_FRONT.map((b) => (
             <IsoBuilding
               key={b.id}
@@ -283,7 +270,7 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
               selected={selected === b.id}
               onSelect={() => onSelect(b.id)}
               stateLabel={stateLabelFor(b.id, city)}
-              tag={tagFor(b.id, city, Boolean(fixture))}
+              tag={tagFor(b.id, city, isFixture)}
               dataState={{
                 lit: String(b.id === "home" ? city.planning.lit : b.id === "studio" ? city.studio === "running" : false),
                 studio: b.id === "studio" ? city.studio : "",
@@ -305,42 +292,116 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
             briefId={city.briefId}
             building={city.worker.building}
           />
-          <SkyAmbient layerRef={skyRef} />
+          <SkyAmbient />
         </svg>
-        <div className="city-canvas" ref={hostRef} />
-        {engineReady &&
-          BUILDINGS_BACK_TO_FRONT.map((b) => {
-            const s = stateLabelFor(b.id, city);
-            return (
-              <button
-                key={b.id}
-                type="button"
-                className="city-hit"
-                style={hitRect(b)}
-                aria-label={`${b.name}: ${b.description}${s ? ` Current state: ${s}.` : ""}`}
-                aria-pressed={selected === b.id}
-                onClick={() => {
-                  onSelect(b.id);
-                  engineRef.current?.ping(b.id);
-                }}
-                onPointerEnter={() => engineRef.current?.setHover(b.id)}
-                onPointerLeave={() => engineRef.current?.setHover(null)}
-                onFocus={() => engineRef.current?.setHover(b.id)}
-                onBlur={() => engineRef.current?.setHover(null)}
-              />
-            );
-          })}
+        {engineReady && (
+          <div
+            className="game-hits"
+            ref={(el) => {
+              hitsRef.current = el;
+              const engine = engineRef.current;
+              if (el && engine) applyHitTransform(el, engine.camera());
+            }}
+          >
+            {BUILDINGS_BACK_TO_FRONT.map((b) => {
+              const s = stateLabelFor(b.id, city);
+              const box = keyBuildingBox(b.id);
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  className="game-hit"
+                  style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+                  aria-label={`${b.name}: ${b.description}${s ? ` Current state: ${s}.` : ""}`}
+                  aria-pressed={selected === b.id}
+                  onClick={() => select(b.id)}
+                  onPointerEnter={() => engineRef.current?.setHover(b.id)}
+                  onPointerLeave={() => engineRef.current?.setHover(null)}
+                  onFocus={() => engineRef.current?.setHover(b.id)}
+                  onBlur={() => engineRef.current?.setHover(null)}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
-      <div className={`city-status${city.worker.unresolved ? " city-status-warn" : ""}`}>
-        <p className="city-caption" role="status" aria-live="polite">
-          {statusText}
-        </p>
-        <p className="city-terms">
-          Compilation uses promotional credits. Any advertised budget is unfunded: BriefMint does not
-          hold or move any funds.
-        </p>
+
+      <div className="hud-layer">
+        <div className="hud-col hud-col--left">
+          <HudWindow title="City scan" hint={scan.loading ? "syncing" : scan.error || scan.stale ? "stale" : "live"}>
+            <div className="scan-row">
+              <span className="scan-big">{scan.loading ? "…" : scan.open}</span>
+              <span className="hud-label">open opportunities</span>
+              <span className="hud-label scan-right">{scan.opportunities} indexed</span>
+            </div>
+            <div className="chip-row">
+              {DIM_LABELS.map((d) => (
+                // Fixture previews never get success/live colouring.
+                <span key={d.key} className={`chip chip--${isFixture ? "plain" : d.tone(city)}`}>
+                  <span className="chip-k">{d.label}</span> {d.value(city)}
+                </span>
+              ))}
+              {fixture && <span className="chip chip--danger">fixture</span>}
+            </div>
+          </HudWindow>
+          {fixtureWindow}
+          <div className="hud-col-spacer" />
+          <div className="hud-hint">
+            <span>Drag to pan · Scroll to zoom · Click a building</span>
+            <span className="hud-hint-btns">
+              <button type="button" className="hud-icon-btn" aria-label="Zoom in" onClick={() => engineRef.current?.zoomBy(1.25)} disabled={!engineReady}>
+                +
+              </button>
+              <button type="button" className="hud-icon-btn" aria-label="Zoom out" onClick={() => engineRef.current?.zoomBy(0.8)} disabled={!engineReady}>
+                −
+              </button>
+              <button type="button" className="hud-icon-btn" aria-label="Reset view" onClick={() => engineRef.current?.fit()} disabled={!engineReady}>
+                ⌂
+              </button>
+            </span>
+          </div>
+          <HudWindow
+            title="Next step"
+            className={city.worker.unresolved ? "hud-window--warn" : undefined}
+            persistent={
+              <div className="order-bar">
+                <span className="order-prompt" aria-hidden="true">
+                  ›
+                </span>
+                <span className="order-text">{action ? action.label : idleHint}</span>
+                {action && (
+                  <button type="button" className="btn btn-primary" disabled={action.busy} onClick={action.run}>
+                    {action.busy ? "Working…" : "Go"}
+                  </button>
+                )}
+              </div>
+            }
+          >
+            <p className="order-status" role="status" aria-live="polite">
+              {statusText}
+            </p>
+            {notice}
+            <p className="hud-fine">
+              Compilation uses promotional credits. Any advertised budget is unfunded: BriefMint never holds or moves funds.
+            </p>
+          </HudWindow>
+        </div>
+
+        <div className="hud-col hud-col--right">
+          <HudWindow title="BriefMint city" hint="owner console" fill footer={<><span>Arkiv · Rabdi</span><span>5 buildings</span></>}>
+            {consoleTop}
+            <nav className="building-tabs" aria-label="City buildings">
+              {BUILDINGS_BACK_TO_FRONT.map((b) => (
+                <button key={b.id} type="button" className="building-tab" aria-pressed={selected === b.id} onClick={() => onSelect(b.id)}>
+                  {b.name}
+                </button>
+              ))}
+            </nav>
+            <div className="console-body">{children}</div>
+          </HudWindow>
+        </div>
       </div>
-      {/* Text alternative for the whole scene. */}
+
       <ul className="sr-only">
         {BUILDINGS_BACK_TO_FRONT.map((b) => {
           const s = stateLabelFor(b.id, city);
@@ -351,7 +412,6 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
             </li>
           );
         })}
-        {jobStatusLabel ? null : <li>No active brief.</li>}
       </ul>
     </div>
   );

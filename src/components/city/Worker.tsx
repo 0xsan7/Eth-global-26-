@@ -21,7 +21,7 @@ interface WorkerProps {
 const DOOR_MS = 900;
 
 function motionAllowed(el: Element | null): boolean {
-  const root = el?.closest(".city-scene");
+  const root = el?.closest(".game");
   if (root?.getAttribute("data-anim") === "off") return false;
   return !(typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 }
@@ -75,7 +75,7 @@ export default function Worker({ x, y, pose, carry, unresolved, briefId, buildin
       raf.current = null;
       el.removeAttribute("data-walking");
       // Cosmetic door open/close at the destination; never blocks UI or state.
-      const root = el.closest(".city-scene");
+      const root = el.closest(".game");
       if (root && building) {
         root.setAttribute("data-door", building);
         if (doorTimer.current !== null) window.clearTimeout(doorTimer.current);

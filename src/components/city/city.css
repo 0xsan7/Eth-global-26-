@@ -2,45 +2,29 @@
    stroke-dashoffset are animated. The scene root's data-anim attribute
    ("on" | "paused" | "off") switches every animation; reduced motion = off. */
 
-.city-scene { position: relative; }
-.city-scene .city-frame { position: relative; }
-.city-canvas { position: absolute; inset: 0; opacity: 0; transition: opacity 300ms ease; pointer-events: none; }
-.city-scene[data-engine="ready"] .city-canvas { opacity: 1; }
-.city-scene[data-engine="ready"] .city-frame > svg { visibility: hidden; }
-.city-scene[data-engine="ready"] .city-frame > svg * { animation: none !important; }
-.city-hit {
-  position: absolute;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  border-radius: 14px;
-  cursor: pointer;
-}
-.city-hit:focus-visible { outline: 3px solid var(--tc-focus, #1a5fb4); outline-offset: -3px; }
-.city-scene .tc-worker { transition: none; will-change: transform; }
+.game .tc-worker { transition: none; will-change: transform; }
 
 /* shared transform boxes */
-.city-scene .tc-tree,
-.city-scene .tc-jet,
-.city-scene .tc-puff,
-.city-scene .tc-data-dot,
-.city-scene .tc-worker-torso,
-.city-scene .tc-bldg-body,
-.city-scene .tc-bldg-pop,
-.city-scene .tc-emblem,
-.city-scene .tc-boxes { transform-box: fill-box; transform-origin: 50% 100%; }
-.city-scene .tc-ripple,
-.city-scene .tc-shimmer,
-.city-scene .tc-dish,
-.city-scene .tc-orbit,
-.city-scene .tc-scan,
-.city-scene .tc-approved,
-.city-scene .tc-bird,
-.city-scene .tc-bldg-shadow,
-.city-scene .tc-worker-head { transform-box: fill-box; transform-origin: 50% 50%; }
-.city-scene .tc-leg { transform-box: fill-box; transform-origin: 50% 0; }
-.city-scene .tc-door { transform-box: fill-box; transform-origin: 0 50%; transition: transform 260ms ease-out; }
+.game .tc-tree,
+.game .tc-jet,
+.game .tc-puff,
+.game .tc-data-dot,
+.game .tc-worker-torso,
+.game .tc-bldg-body,
+.game .tc-bldg-pop,
+.game .tc-emblem,
+.game .tc-boxes { transform-box: fill-box; transform-origin: 50% 100%; }
+.game .tc-ripple,
+.game .tc-shimmer,
+.game .tc-dish,
+.game .tc-orbit,
+.game .tc-scan,
+.game .tc-approved,
+.game .tc-bird,
+.game .tc-bldg-shadow,
+.game .tc-worker-head { transform-box: fill-box; transform-origin: 50% 50%; }
+.game .tc-leg { transform-box: fill-box; transform-origin: 50% 0; }
+.game .tc-door { transform-box: fill-box; transform-origin: 0 50%; transition: transform 260ms ease-out; }
 
 /* ---------- A. Ambient life ---------- */
 .tc-tree { animation: tc-sway 5.5s ease-in-out var(--d, 0s) infinite alternate; }
@@ -87,11 +71,11 @@
 @keyframes tc-amber-alert { from { opacity: 0.6; } to { opacity: 1; } }
 
 /* cosmetic door at the worker's destination */
-.city-scene[data-door="home"] [data-building="home"] .tc-door,
-.city-scene[data-door="studio"] [data-building="studio"] .tc-door,
-.city-scene[data-door="treasury"] [data-building="treasury"] .tc-door,
-.city-scene[data-door="registry"] [data-building="registry"] .tc-door,
-.city-scene[data-door="archive"] [data-building="archive"] .tc-door { transform: scaleX(0.2); }
+.game[data-door="home"] [data-building="home"] .tc-door,
+.game[data-door="studio"] [data-building="studio"] .tc-door,
+.game[data-door="treasury"] [data-building="treasury"] .tc-door,
+.game[data-door="registry"] [data-building="registry"] .tc-door,
+.game[data-door="archive"] [data-building="archive"] .tc-door { transform: scaleX(0.2); }
 
 /* ---------- C. Building states ---------- */
 .tc-win-lit { opacity: 0; transition: opacity 0.4s ease; }
@@ -169,47 +153,84 @@
 
 /* ---------- E. Page load ---------- */
 .tc-bldg-pop { animation: tc-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) calc(var(--i, 0) * 90ms) both; }
-.city-scene .city-toolbar,
-.city-scene .city-status { animation: tc-fadein 400ms ease-out 150ms both; }
+.hud-window { animation: tc-fadein 400ms ease-out 150ms both; }
 @keyframes tc-pop {
   from { transform: translateY(8px) scale(0.86); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
 @keyframes tc-fadein { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---------- status card + dev fixture ---------- */
-.city-status {
-  margin-top: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 5px solid var(--brand);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
+/* ---------- full-screen game + HUD layer ---------- */
+.city-page { background: var(--water); }
+.game { position: fixed; inset: 0; overflow: hidden; background: var(--water); }
+.game-world { position: absolute; inset: 0; touch-action: none; cursor: grab; user-select: none; }
+.game-world[data-dragging] { cursor: grabbing; }
+.game-world canvas { position: absolute; inset: 0; }
+.game-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.game[data-engine="ready"] .game-fallback { visibility: hidden; }
+.game[data-engine="ready"] .game-fallback * { animation: none !important; }
+.game-hits { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.game-hit { position: absolute; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer; }
+.game-world[data-dragging] .game-hit { cursor: grabbing; }
+.game-hit:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+.hud-layer { position: absolute; inset: 0; pointer-events: none; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem; }
+.hud-col { display: flex; flex-direction: column; gap: 0.75rem; min-height: 0; }
+.hud-col--left { width: min(380px, 34vw); }
+.hud-col--right { width: 380px; }
+.hud-col-spacer { flex: 1; }
+.hud-hint {
+  pointer-events: auto; align-self: flex-start; display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.65rem; background: color-mix(in srgb, var(--paper) 88%, transparent); border: 1px solid var(--rule);
+  font-family: var(--font-hud); font-size: 10px; letter-spacing: 0.1em; color: var(--ink-soft);
 }
-.city-status .city-caption { margin: 0; color: var(--ink); font-weight: 700; }
-.city-status-warn { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.city-terms { margin: 0.3rem 0 0; font-size: 0.84rem; color: var(--ink-soft); }
-.city-fixture {
-  margin: 0 0 0.6rem;
-  padding: 0.45rem 0.75rem;
-  border: 2px dashed var(--danger);
-  background: var(--danger-soft);
-  color: var(--ink);
-  font-size: 0.86rem;
-  border-radius: 12px;
+.hud-hint-btns { display: flex; gap: 0.25rem; }
+
+.scan-row { display: flex; align-items: baseline; gap: 0.6rem; }
+.scan-big { font-family: var(--font-hud); font-size: 30px; font-weight: 700; line-height: 1; color: var(--ink); }
+.scan-right { margin-left: auto; }
+
+.order-status { margin: 0 0 0.4rem; font-size: 13px; }
+.order-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.35rem 0.35rem 0.6rem; border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--rule)); background: var(--paper-deep); }
+.order-prompt { font-family: var(--font-hud); color: var(--accent); font-weight: 700; }
+.order-text { flex: 1; font-family: var(--font-hud); font-size: 12px; letter-spacing: 0.04em; color: var(--ink); }
+
+.console-top { display: grid; gap: 0.6rem; padding-bottom: 0.7rem; margin-bottom: 0.7rem; border-bottom: 2px solid var(--rule); }
+.console-name { display: block; font-family: var(--font-hud); font-size: 18px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; }
+.console-sub { display: block; font-family: var(--font-hud); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.building-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.8rem; }
+.building-tab {
+  font-family: var(--font-hud); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-soft); background: transparent; border: 2px solid var(--rule); padding: 0.3rem 0.5rem; cursor: pointer;
 }
-.city-fixture select { min-width: 10rem; padding: 0.3rem 2rem 0.3rem 0.6rem; margin-left: 0.4rem; }
+.building-tab:hover { color: var(--ink); border-color: var(--rule-strong); }
+.building-tab[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.console-body .card { margin: 0.6rem 0; padding: 0.75rem; }
+.hud-field { display: grid; gap: 0.35rem; }
+
+@media (max-width: 1000px) {
+  .hud-col--left { width: 320px; }
+  .hud-col--right { width: 340px; }
+}
+/* Narrow screens: the map becomes a framed viewport and windows stack below it. */
+@media (max-width: 860px) {
+  .game { position: relative; inset: auto; overflow: visible; background: var(--paper-deep); }
+  .game-world { position: relative; height: 62vh; min-height: 340px; background: var(--water); }
+  .hud-layer { position: static; flex-direction: column; padding: 0.75rem; }
+  .hud-col--left, .hud-col--right { width: auto; }
+  .hud-col-spacer { display: none; }
+  .hud-window--fill > .hud-window__body { overflow: visible; }
+}
 
 /* ---------- global motion switch ---------- */
-.city-scene[data-anim="paused"] *,
-.city-scene[data-anim="paused"] *::before,
-.city-scene[data-anim="paused"] *::after { animation-play-state: paused !important; }
-.city-scene[data-anim="off"] *,
-.city-scene[data-anim="off"] *::before,
-.city-scene[data-anim="off"] *::after { animation: none !important; transition-property: opacity !important; }
+.game[data-anim="paused"] *,
+.game[data-anim="paused"] *::before,
+.game[data-anim="paused"] *::after { animation-play-state: paused !important; }
+.game[data-anim="off"] *,
+.game[data-anim="off"] *::before,
+.game[data-anim="off"] *::after { animation: none !important; transition-property: opacity !important; }
 @media (prefers-reduced-motion: reduce) {
-  .city-scene *,
-  .city-scene *::before,
-  .city-scene *::after { animation: none !important; transition-property: opacity !important; }
+  .game *,
+  .game *::before,
+  .game *::after { animation: none !important; transition-property: opacity !important; }
 }
