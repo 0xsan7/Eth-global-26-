@@ -5,15 +5,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { createServer, type ViteDevServer } from "vite";
 
 // Local-only HTTP smoke. Temporary unfunded identity/database; no external calls.
 const directory = await mkdtemp(join(tmpdir(), "tool-city-smoke-"));
 const base = "http://127.0.0.1:3187";
 const origin = "https://tool-city-smoke.invalid";
-const smokeEnv = { ...process.env, HOSTNAME: "127.0.0.1", PORT: "3187", APP_ORIGIN: origin,
+const cityBase = "http://127.0.0.1:3188";
+// Explicit allowlist: never inherit runtime credentials or endpoint/quota settings into this smoke.
+const smokeEnv: NodeJS.ProcessEnv = { NODE_ENV: "production", HOSTNAME: "127.0.0.1", PORT: "3187", APP_ORIGIN: origin,
     AUTH_ALLOWED_ORIGINS: origin, SESSION_SECRET: randomBytes(32).toString("hex"),
     DATABASE_PATH: join(directory, "smoke.sqlite"), NEXT_PUBLIC_ENABLE_DEV_FIXTURES: "false",
-    ZERO_G_API_KEY: "", ZERO_G_MODEL_ID: "", BRIEFMINT_ALLOWED_WALLETS: "" };
+    ZERO_G_API_KEY: "", ZERO_G_MODEL_ID: "", ZERO_G_BASE_URL: "https://router-api.0g.ai/v1", INFERENCE_TIMEOUT_MS: "1000",
+    ARKIV_ACCESS_KEY: "", WHITECHAIN_RPC_URL: "", BRIEFMINT_ALLOWED_WALLETS: "",
+    BRIEFMINT_COMPILATIONS_PER_WALLET: "", BRIEFMINT_GLOBAL_DISPATCH_LIMIT: "", BRIEFMINT_QUOTA_WINDOW_ID: "", BRIEFMINT_QUOTA_WINDOW_END: "" };
 let logs = "";
 function startServer() {
   const serverProcess = spawn(process.execPath, [".next/standalone/server.js"], {
@@ -24,6 +29,7 @@ function startServer() {
   return serverProcess;
 }
 let child = startServer();
+let cityServer: ViteDevServer | undefined;
 async function stopServer() {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const stopped = new Promise<void>(resolve => { child.once("exit", () => resolve()); });
@@ -42,18 +48,31 @@ async function waitForServer() {
 }
 try {
   await waitForServer();
+  // Use B's actual config; only target/ports change for this isolated local process.
+  // envFile=false prevents Vite from reading operator-owned environment files.
+  cityServer = await createServer({ configFile: join(process.cwd(), "apps/web/vite.config.ts"), root: join(process.cwd(), "apps/web"), envFile: false,
+    server: { host: "127.0.0.1", port: 3188, strictPort: true, proxy: { "/api": { target: base } } } });
+  assert.equal((cityServer.config.server.proxy?.["/api"] as { changeOrigin?: boolean } | undefined)?.changeOrigin, false);
+  await cityServer.listen();
+  assert.equal((await fetch(cityBase)).status, 200);
   const config = await (await fetch(`${base}/api/config`)).json();
   assert.equal(config.data.configured, false, "Smoke must use the unconfigured deployment manifest");
   assert.equal((await fetch(`${base}/checkout-demo/index.html`)).status, 200);
   assert.equal((await fetch(`${base}/api/jobs`)).status, 401);
   const account = privateKeyToAccount(generatePrivateKey());
-  const challenge = await (await fetch(`${base}/api/auth/challenge?address=${account.address}`)).json();
+  const challenge = await (await fetch(`${cityBase}/api/auth/challenge?address=${account.address}`)).json();
   assert.equal(challenge.ok, true);
   const signature = await account.signMessage({ message: challenge.data.message });
-  const login = await fetch(`${base}/api/auth/verify`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ challengeId: challenge.data.challengeId, signature }) });
+  const login = await fetch(`${cityBase}/api/auth/verify`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ challengeId: challenge.data.challengeId, signature }) });
   assert.equal(login.status, 200);
+  assert.match(login.headers.get("set-cookie") ?? "", /; HttpOnly; SameSite=Lax;/);
+  assert.match(login.headers.get("set-cookie") ?? "", /; Secure/);
   const cookie = login.headers.get("set-cookie")?.split(";")[0];
   assert(cookie);
+  const proxiedSession = await fetch(`${cityBase}/api/auth/session`, { headers: { Cookie: cookie } });
+  assert.equal((await proxiedSession.json()).data.address, account.address, "Vite must forward the session cookie unchanged");
+  const deniedOrigin = await fetch(`${cityBase}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, Origin: "https://untrusted.invalid", "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(deniedOrigin.status, 403, "Vite must preserve the actual Origin for backend rejection");
   const jobs = await fetch(`${base}/api/jobs`, { headers: { Cookie: cookie } });
   assert.equal(jobs.status, 200);
   assert.deepEqual((await jobs.json()).data.jobs, []);
@@ -98,11 +117,11 @@ try {
   assert.deepEqual(persisted.inputSegments, brief.inputSegments);
   assert.equal(persisted.attemptsUsed, 0, "Restart/reopen must not dispatch inference");
   assert.equal((await (await fetch(`${base}/api/briefs`, { headers })).json()).data.briefs.length, 1);
-  console.log("PASS: standalone assets, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private CRUD/export, approval-gated public export, authenticated publication refresh, persistent restart/session, zero inference dispatches. No external integration called.");
+  console.log("PASS: standalone assets, actual Vite /api proxy with Cookie/Set-Cookie and Origin preservation, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private CRUD/export, approval-gated public export, authenticated publication refresh, persistent restart/session, zero inference dispatches. Local HTTP only; no external integration called.");
 } catch (error) {
   console.error(logs);
   throw error;
 } finally {
-  await stopServer();
-  await rm(directory, { recursive: true, force: true });
+  try { await cityServer?.close(); }
+  finally { await stopServer(); await rm(directory, { recursive: true, force: true }); }
 }
