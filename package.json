@@ -11,6 +11,9 @@
   ],
   "scripts": {
     "dev": "next dev",
+    "reference:dev": "npm --prefix apps/web run dev",
+    "reference:build": "npm --prefix apps/web run build",
+    "reference:typecheck": "npm --prefix apps/web run typecheck",
     "build": "npm run demo:build && next build && node scripts/prepare-standalone.ts",
     "start": "node .next/standalone/server.js",
     "lint": "eslint src tests examples scripts contracts/test hardhat.config.ts vitest.config.ts",
