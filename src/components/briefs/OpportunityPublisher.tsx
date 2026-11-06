@@ -7,6 +7,7 @@
 // happens in the browser wallet. Intent and broadcast identifiers are
 // persisted locally (non-sensitive) before reporting success.
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { assertPreparedIntentMatches, clearPublicationRecovery, readPublicationRecovery, storePublicationRecovery } from "@/lib/client/publication-recovery";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { useSession } from "@/lib/client/use-session";
@@ -62,6 +63,7 @@ async function assertWalletReady(intent: Awaited<ReturnType<typeof validatePubli
 }
 
 export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: OpportunityPublisherProps) {
+  const router = useRouter();
   const { address } = useSession();
   const runInFlight = useRef(false);
   const [accessKey, setAccessKey] = useState("");
@@ -70,6 +72,8 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [manualHash, setManualHash] = useState("");
   const [diagnostic, setDiagnostic] = useState<ArkivWriteDiagnostic | null>(null);
+  const [acknowledgeCopy, setAcknowledgeCopy] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
   const arm = useArmPublication();
   const reconcile = useReconcilePublication();
   const refresh = useRefreshPublication();
@@ -80,6 +84,25 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
   const confirmed = brief.publication.confirmed;
   const pending = brief.publication.pending;
   const live = brief.publication.status === "live";
+  const canCopy = approved && !brief.publicationCopy && !confirmed && pending?.state === "unknown"
+    && !pending.transactionHash && !["preparing", "signing", "reconciling"].includes(phase);
+
+  const createDemoCopy = async () => {
+    if (!canCopy || !acknowledgeCopy || !approval || !address || runInFlight.current || copyBusy) return;
+    if (pending && readLocalRecovery(brief.id, pending.intent.intentId)?.transactionHash) {
+      setError("A broadcast hash exists in local recovery storage. Reconcile that known transaction before creating a demo copy."); return;
+    }
+    setCopyBusy(true); setError(null);
+    try {
+      const generation = currentSessionGeneration();
+      const { briefmintApi } = await import("@/lib/client/briefmint-api");
+      const copy = await briefmintApi.copyPublication(brief.id, { expectedRevision: brief.draftRevision,
+        publicPayloadHash: approval.publicPayloadHash, acknowledgeDuplicateRisk: true }, address);
+      if (isCurrentSessionGeneration(generation)) router.push(`/briefs/${copy.id}`);
+    } catch (error) {
+      setError(isApiError(error) ? `${error.code}: ${error.message}` : "Could not create the separate demo copy.");
+    } finally { setCopyBusy(false); }
+  };
 
   const run = async (operation: "create" | "update" | "close") => {
     if (runInFlight.current) return;
@@ -262,6 +285,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
   return (
     <section aria-label="Arkiv publication">
       <h3>Owner-signed Arkiv publication</h3>
+      {brief.publicationCopy && <p className="notice">Separate demo copy reusing the genuine generated draft from source revision R{brief.publicationCopy.sourceRevision}. No new inference was requested. The original publication remains unresolved and may still appear; this copy could duplicate it. Review and approve this copy separately.</p>}
       <p className="tc-muted">
         Signing wallet must be the project owner. Network: Arkiv Rabdi ({rpcLabel}). Once signing is armed, a declined or interrupted signature leaves the attempt locked until its outcome can be resolved.
       </p>
@@ -298,6 +322,13 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
           <label htmlFor="arkiv-recovery-hash">Known transaction hash for recovery (optional; never invent one)</label>
           <input id="arkiv-recovery-hash" value={manualHash} onChange={(event) => setManualHash(event.target.value)} placeholder="0x… actual wallet or explorer hash" disabled={phase === "reconciling"} />
           <p className="tc-muted">Manual recovery verifies chain, sender, engine receipt and exact approved entity before binding the hash. This sends no transaction.</p>
+        </div>
+      )}
+      {canCopy && (
+        <div className="card">
+          <p className="error">The original transaction may still appear. A separate demo copy creates a distinct brief/title and later intent/entity, with duplicate-publication risk. It does not recover or unlock this attempt.</p>
+          <label><input type="checkbox" checked={acknowledgeCopy} onChange={(event) => setAcknowledgeCopy(event.target.checked)} disabled={copyBusy} /> I accept the duplicate risk and will review and approve the separate demo copy.</label>
+          <button type="button" className="btn" onClick={createDemoCopy} disabled={!acknowledgeCopy || copyBusy || !address}>{copyBusy ? "Creating copy…" : "Create separate demo copy (no AI)"}</button>
         </div>
       )}
       <div className="btn-row">

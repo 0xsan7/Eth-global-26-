@@ -20,13 +20,22 @@ node --import tsx scripts/briefmint-arkiv-reader.ts --list --public-endpoint --s
 
 ## Preconditions
 
+### Explicit fresh demo identity when the original remains unknown
+
+The owner may choose **Create separate demo copy (no AI)** on an approved original with an unknown create and no known hash. This is not nonbroadcast proof or recovery of the original. Accept the visible duplicate-risk warning first: the original transaction may still appear later. The authenticated `POST /api/briefs/:id/publication/copy` binds `expectedRevision`, `publicPayloadHash`, and `acknowledgeDuplicateRisk: true`. It creates at most one separate private copy per source, reuses the genuine model result/evidence without inference, adds a distinct `[demo …]` public title, and requires fresh approval. The original brief, approval and intent are untouched. Private copy provenance never enters Arkiv content.
+
+1. Create the copy explicitly, review its new title and public preview, then approve its own revision/hash at Release Desk.
+2. Verify Rabdi 7794095 and the same owner wallet with tGLM. Press Sign publication once; approve only that one new intent.
+3. Save the actual broadcast hash and confirmed entity key. If unknown, stop and use recovery rather than another copy or signature.
+4. Refresh `/opportunities` and run the independent reader command above against the new entity key. Disclose that the original remains uncertain and this is a separate demo publication.
+
 For an existing `unknown` attempt without a hash, do not press Sign again. The publication panel now accepts a **real known transaction hash** under Recovery. Reconcile sends `recovery: true` to the existing publication/reconcile endpoint: a manual candidate must pass confirmed receipt, Rabdi chain, signer, Arkiv engine, entity owner, canonical payload/hash/revision and expiry checks before it is bound. Invalid, pending or reverted candidates leave the unknown attempt untouched. Once a validated hash is known, receipt/readback observations can be repeated without sending a transaction.
 
 If no hash exists, preserve the lock. Zero latest/pending nonce, unchanged balance and empty explorer/index results do not exclude an unobserved or delayed wallet submission. Collect MetaMask's local RPC failure code/request status and any actual broadcast hash; never provide signatures, seed phrases or private notes. New submissions retain only sanitized RPC phase/code, target, nonce snapshot and calldata hash in browser recovery storage. A nonce snapshot is advisory and never authorizes unlocking. There is no force-unlock endpoint.
 
 Use the currently approved application, supported Node/runtime, Rabdi network (chain 7794095), and an operator-controlled wallet. Verify current `GET /api/briefmint/config` readiness and review the application build/source for the exact transaction flow. Use a separate short-lived synthetic brief, clearly labeled synthetic, with no real/private source notes or contact details. It must have a genuinely compiled ready result, explicit human review of every public field, and explicit owner approval of the exact payload. There is no automatic compute or hidden generation gate. If a ready synthetic result is unavailable, stop; no probe step authorizes paid inference. A helper may use an already ready synthetic brief whose deadline has been separately approved to be short-lived and future-dated. The deadline has to satisfy the API's future/within-seven-days check at create, save, approve and prepare.
 
-The wallet operator must explicitly approve each create, update, close and fee-bearing signature after seeing exact payload and destination. Keep transaction hashes/entity keys as public identifiers only; never record session cookies, signatures, seed phrases, private notes, or access keys in the report. Stop on wrong chain/account, mismatch, unresolved broadcast, unexpected content, or unavailable RPC. Never retry an uncertain write or create a replacement record.
+The wallet operator must explicitly approve each create, update, close and fee-bearing signature after seeing exact payload and destination. Keep transaction hashes/entity keys as public identifiers only; never record session cookies, signatures, seed phrases, private notes, or access keys in the report. Stop on wrong chain/account, mismatch, unresolved broadcast, unexpected content, or unavailable RPC. Never retry an uncertain write. A separate demo identity is allowed only through the explicit acknowledged-copy procedure above; it does not unlock the original.
 
 ## Human browser sequence
 

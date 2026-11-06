@@ -97,6 +97,9 @@ export const briefmintApi = {
   preparePublication(id: string, req: BriefApiRequest<"prepare">, owner: string | null): Promise<PublicationIntent> {
     return callBriefApi("prepare", req, { id, owner }).then((r) => r.data);
   },
+  copyPublication(id: string, req: BriefApiRequest<"publicationCopy">, owner: string | null) {
+    return callBriefApi("publicationCopy", req, { id, owner }).then((r) => r.data);
+  },
   async reconcilePublication(id: string, req: BriefApiRequest<"reconcile">, owner: string | null): Promise<ReconcileBriefResult> {
     const r = await callBriefApi("reconcile", req, { id, owner });
     return { brief: r.data, pending: r.status === 202 };

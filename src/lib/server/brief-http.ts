@@ -52,6 +52,7 @@ export async function handleBrief(action: BriefApiName, request: Request, id?: s
     let data: unknown; let status = 200;
     switch (action) {
       case "create": data = runtime.briefs.create(address, input); status = 201; break;
+      case "publicationCopy": data = await runtime.briefs.publicationCopy(address, id!, input); break;
       case "list": data = runtime.briefs.list(address, input); break;
       case "get": data = runtime.briefs.get(address, id!); break;
       case "saveDraft": data = runtime.briefs.saveDraft(address, id!, input); break;
