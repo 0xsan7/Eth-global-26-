@@ -154,7 +154,7 @@ export function deriveCityState(i: CityStateInput): CityState {
 
   switch (i.execution) {
     case null:
-      return w(null, "idle", "none", "No active brief. Save private notes at the Planning Desk to start.");
+      return w("home", "idle", "none", "No active brief. Save private notes at the Planning Desk to start.");
     case "failed":
     case "interrupted":
       return w(

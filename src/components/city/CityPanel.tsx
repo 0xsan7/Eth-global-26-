@@ -41,9 +41,9 @@ export default function CityPanel(props: CityPanelProps) {
   const { building } = props;
   const def = BUILDING_BY_ID[building];
   return (
-    <section className="card city-panel" aria-label={`${def.name} panel`}>
-      <h2>{def.name}</h2>
-      <p className="tc-muted">{def.description}</p>
+    <section className="hud-panel" aria-label={`${def.name} panel`}>
+      <h2 className="hud-panel-title">{def.name}</h2>
+      <p className="hud-muted">{def.description}</p>
       {building === "registry" && <RegistryBody {...props} />}
       {building === "home" && <HomeBody {...props} />}
       {building === "treasury" && <ReleaseBody {...props} />}
