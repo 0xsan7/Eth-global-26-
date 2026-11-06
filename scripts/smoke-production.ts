@@ -11,7 +11,8 @@ import { createServer, type ViteDevServer } from "vite";
 const directory = await mkdtemp(join(tmpdir(), "tool-city-smoke-"));
 const base = "http://127.0.0.1:3187";
 const origin = "https://tool-city-smoke.invalid";
-const cityBase = "http://127.0.0.1:3188";
+const demoOrigin = "http://127.0.0.1:3188";
+const demoBase = `${demoOrigin}/checkout-demo/`;
 // Explicit allowlist: never inherit runtime credentials or endpoint/quota settings into this smoke.
 const smokeEnv: NodeJS.ProcessEnv = { NODE_ENV: "production", HOSTNAME: "127.0.0.1", PORT: "3187", APP_ORIGIN: origin,
     AUTH_ALLOWED_ORIGINS: origin, SESSION_SECRET: randomBytes(32).toString("hex"),
@@ -29,7 +30,7 @@ function startServer() {
   return serverProcess;
 }
 let child = startServer();
-let cityServer: ViteDevServer | undefined;
+let demoServer: ViteDevServer | undefined;
 async function stopServer() {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const stopped = new Promise<void>(resolve => { child.once("exit", () => resolve()); });
@@ -48,30 +49,30 @@ async function waitForServer() {
 }
 try {
   await waitForServer();
-  // Use B's actual config; only target/ports change for this isolated local process.
-  // envFile=false prevents Vite from reading operator-owned environment files.
-  cityServer = await createServer({ configFile: join(process.cwd(), "apps/web/vite.config.ts"), root: join(process.cwd(), "apps/web"), envFile: false,
+  // Use the actual checkout-demo config with isolated ports and an explicit API target.
+  // envDir=false prevents Vite from reading operator-owned environment files.
+  demoServer = await createServer({ configFile: join(process.cwd(), "examples/checkout-demo/vite.config.ts"), root: join(process.cwd(), "examples/checkout-demo"), envDir: false,
     server: { host: "127.0.0.1", port: 3188, strictPort: true, proxy: { "/api": { target: base } } } });
-  assert.equal((cityServer.config.server.proxy?.["/api"] as { changeOrigin?: boolean } | undefined)?.changeOrigin, false);
-  await cityServer.listen();
-  assert.equal((await fetch(cityBase)).status, 200);
+  assert.ok(demoServer.config.server.proxy?.["/api"], "The checkout demo must retain its API proxy");
+  await demoServer.listen();
+  assert.equal((await fetch(demoBase)).status, 200);
   const config = await (await fetch(`${base}/api/config`)).json();
   assert.equal(config.data.configured, false, "Smoke must use the unconfigured deployment manifest");
   assert.equal((await fetch(`${base}/checkout-demo/index.html`)).status, 200);
   assert.equal((await fetch(`${base}/api/jobs`)).status, 401);
   const account = privateKeyToAccount(generatePrivateKey());
-  const challenge = await (await fetch(`${cityBase}/api/auth/challenge?address=${account.address}`)).json();
+  const challenge = await (await fetch(`${demoOrigin}/api/auth/challenge?address=${account.address}`)).json();
   assert.equal(challenge.ok, true);
   const signature = await account.signMessage({ message: challenge.data.message });
-  const login = await fetch(`${cityBase}/api/auth/verify`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ challengeId: challenge.data.challengeId, signature }) });
+  const login = await fetch(`${demoOrigin}/api/auth/verify`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ challengeId: challenge.data.challengeId, signature }) });
   assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie") ?? "", /; HttpOnly; SameSite=Lax;/);
   assert.match(login.headers.get("set-cookie") ?? "", /; Secure/);
   const cookie = login.headers.get("set-cookie")?.split(";")[0];
   assert(cookie);
-  const proxiedSession = await fetch(`${cityBase}/api/auth/session`, { headers: { Cookie: cookie } });
+  const proxiedSession = await fetch(`${demoOrigin}/api/auth/session`, { headers: { Cookie: cookie } });
   assert.equal((await proxiedSession.json()).data.address, account.address, "Vite must forward the session cookie unchanged");
-  const deniedOrigin = await fetch(`${cityBase}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, Origin: "https://untrusted.invalid", "Content-Type": "application/json" }, body: "{}" });
+  const deniedOrigin = await fetch(`${demoOrigin}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, Origin: "https://untrusted.invalid", "Content-Type": "application/json" }, body: "{}" });
   assert.equal(deniedOrigin.status, 403, "Vite must preserve the actual Origin for backend rejection");
   const jobs = await fetch(`${base}/api/jobs`, { headers: { Cookie: cookie } });
   assert.equal(jobs.status, 200);
@@ -117,11 +118,11 @@ try {
   assert.deepEqual(persisted.inputSegments, brief.inputSegments);
   assert.equal(persisted.attemptsUsed, 0, "Restart/reopen must not dispatch inference");
   assert.equal((await (await fetch(`${base}/api/briefs`, { headers })).json()).data.briefs.length, 1);
-  console.log("PASS: standalone assets, actual Vite /api proxy with Cookie/Set-Cookie and Origin preservation, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private CRUD/export, approval-gated public export, authenticated publication refresh, persistent restart/session, zero inference dispatches. Local HTTP only; no external integration called.");
+  console.log("PASS: standalone assets, actual checkout-demo Vite /api proxy with Cookie and Origin preservation, legacy auth/jobs/checkout denial, BriefMint chain/readiness, private CRUD/export, approval-gated public export, authenticated publication refresh, persistent restart/session, zero inference dispatches. Local HTTP only; no external integration called.");
 } catch (error) {
   console.error(logs);
   throw error;
 } finally {
-  try { await cityServer?.close(); }
+  try { await demoServer?.close(); }
   finally { await stopServer(); await rm(directory, { recursive: true, force: true }); }
 }

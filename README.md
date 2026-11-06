@@ -51,7 +51,7 @@ Set a local `SESSION_SECRET` (32+ characters) in `.env.local` before using authe
 npm run dev
 ```
 
-The app serves at `http://localhost:3000` with same-origin `/api` routes. Private notes, compilation, and publication stay fail-closed until the operator configures: 0G credentials (`ZERO_G_API_KEY`, `ZERO_G_MODEL_ID`), the quota policy (`BRIEFMINT_*` — empty allowlist disables compilation), and Arkiv access (`ARKIV_ACCESS_KEY`, a public rate-limit key, not a wallet credential). Never commit real values; do not put keys in chat, browser output, or public records. The browser's independent reader and publisher take the Arkiv key as local UI input instead. See `.env.example` for the full variable list and [live setup](docs/SETUP-LIVE-INTEGRATIONS.md) for wallet funding and 0G access.
+The app serves at `http://localhost:3000` with same-origin `/api` routes. Authenticated APIs require the local `SESSION_SECRET`; private notes can be stored without live provider or Arkiv access. Compilation remains unavailable until the operator configures 0G credentials (`ZERO_G_API_KEY`, `ZERO_G_MODEL_ID`) and the quota policy (`BRIEFMINT_*` — an empty allowlist disables compilation). Publication also requires Arkiv availability and an owner-signed wallet action. `ARKIV_ACCESS_KEY` is a public rate-limit key, not a wallet credential. Never commit real values; do not put keys in chat, browser output, or public records. The browser's independent reader and publisher take the Arkiv key as local UI input instead. See `.env.example` for the full variable list and [live setup](docs/SETUP-LIVE-INTEGRATIONS.md) for wallet funding and 0G access.
 
 Validation commands:
 
@@ -65,7 +65,7 @@ npm run build
 npm run smoke:local
 ```
 
-`npm run test` runs server + UI suites. `npm run build` packages the standalone checkout example and prepares standalone public/static assets; `npm start` runs that build. Production requires HTTPS configuration and a persistent `DATABASE_PATH` on one Node instance.
+`npm run test` runs server + UI suites. `npm run build` packages the standalone checkout example and prepares standalone public/static assets; `npm start` runs that build. `npm run smoke:local` exercises the standalone app and checkout-demo Vite proxy with temporary data and no external integrations. Production requires HTTPS configuration and a persistent `DATABASE_PATH` on one Node instance.
 
 ## Live validation and submission
 
