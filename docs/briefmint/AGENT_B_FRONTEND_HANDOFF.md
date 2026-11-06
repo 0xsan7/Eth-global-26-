@@ -57,7 +57,7 @@ Independent reader (no wallet or app API): `node --import tsx scripts/briefmint-
 
 ### Forwardable note to Agent B
 
-Continue `codex/payment-backend` through Part 2 checkpoints `42258e1`/`03bbaa8` (Part 1 fixes `1ebeeab`); use the latest local commit when handed over. APIs are stable in `src/lib/shared/briefs.ts`, contract v1.2. Finish only your browser/session and signing flow: mutation/connection epoch guards, serialized logout/login, fresh `prepare`, exclusive null-hint arm before one wallet attempt, durable public pending identifiers and honest filter/detail/error controls. Unknown/submitted/reverted state never permits a new signature. Test proxy cookies, account changes, rejection and two-tab races with offline doubles first. Real browser wallet tests, inference, Arkiv writes and deployment require separate human authorization. No live journey is evidenced yet.
+Continue `codex/payment-backend` at Part 3 code commit `c814af7` plus its final checkpoint note (Part 2: `42258e1`/`03bbaa8`; Part 1: `1ebeeab`). APIs are stable in `src/lib/shared/briefs.ts`, contract v1.2. Finish your browser/session and signing flow: mutation/connection epoch guards, serialized logout/login, fresh `prepare`, exclusive null-hint arm before one wallet attempt, durable public pending identifiers and honest filter/detail/error controls. Unknown/submitted/reverted state never permits a new signature. The sole A-owned UI exception guards invalid public previews. Test account changes, rejection/reload and two-tab races with offline doubles first. Real wallet tests, inference, Arkiv writes and deployment require separate human authorization. No live journey is evidenced yet.
 
 ## Final integration status
 

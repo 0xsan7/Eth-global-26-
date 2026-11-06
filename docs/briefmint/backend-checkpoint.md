@@ -1,5 +1,7 @@
 # BriefMint backend checkpoint
 
+**Current release status:** use the Part 3 acceptance matrix at the end of this document. Earlier percentages are historical planning estimates; no new completion percentage is asserted. Passing offline checks does not establish the three external gates or production readiness.
+
 Date: 6 November 2026, IST. Branch: `codex/payment-backend`; foundation `5674d82`, durable backend `a99a0d2`, guarded preflight/diagnostics through `66a0931`, public export/publication checkpoint `847de7e`, and the current uncommitted city/Arkiv integration. The PRD and `src/lib/shared/briefs.ts` remain authoritative.
 
 ## What is implemented
@@ -75,3 +77,58 @@ Reader/schema fixes verify actual chain, transaction/receipt hashes, engine dest
 The executable `scripts/briefmint-arkiv-reader.ts` reads without API, SQLite, cookies or wallet; its CLI help ran locally and its offline tests cover filters, validated public-only output, empty/absent vs errors and separate block observations. No live discovery was performed. **63 tests passed across five targeted files** (`brief-publication`, `briefs-contract`, `arkiv-adapter`, `arkiv-reader-cli`, `brief-http`); root/Vite typechecks, changed-file ESLint and whitespace checks passed. Full project tests/builds remain Part 3. No frontend/browser writer file, credential value, signature, chain mutation, push, merge or deployment was accessed/performed.
 
 Acceptance status: **BM-09/BM-11** backend intent/receipt/readback/update/close locally verified; **BM-10/BM-12** indexed discovery/native expiry code locally verified but live network behavior unproven; **BM-14** standalone reader implemented/offline verified with no real record proof; **BM-15** existing city wiring retained, with required mutation-epoch, durable-identifier and prepare/atomic-arm signing changes explicitly assigned to B. [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md) contains exact routes, contracts, commands and a forwardable message; [ARKIV_LIVE_PROBE.md](ARKIV_LIVE_PROBE.md) contains the later human-authorized lifecycle/independence procedure. Live create/query/update/close/native expiry and stopped-backend independent reading still need real owner/entity/transaction evidence. Overall estimate **68%** (one point for the runnable reader/runbooks; zero new live-proof credit). **READY FOR PART 3**, with B integration and all live gates explicitly outstanding.
+
+## Part 3 — final offline verification and human last mile
+
+6 November 2026, IST. Code/runbook commit **`c814af7`**, following `03bbaa8` and the Part 1/2 implementation commits. Initial tree was clean with no teammate changes. The final pass adds [the MOCK vertical-slice test](../../tests/server/brief-vertical-slice.test.ts) and strengthens [the local process smoke](../../scripts/smoke-production.ts) with an explicit environment allowlist and the actual Vite proxy configuration (only isolated ports/target overridden, env-file loading disabled). It proves Cookie/Set-Cookie/Origin forwarding and standalone process restart using a disposable SQLite database. It sends zero external inference/chain requests. Loopback HTTP and a Secure cookie attribute do not establish browser wallet behavior or real TLS.
+
+One indispensable frontend adapter exception: `apps/web/src/App.tsx` now returns no public preview for a new/non-ready or invalid unsaved draft instead of throwing during render. It was a small isolated guard with no overlapping teammate change; wallet/session/publication behavior was not rewritten. The bounded independent review found no new blockers in the changed code. B's substantive signing/session/discovery work remains incomplete.
+
+### Final commands and actual results
+
+Runtime: **Node v24.21.0**. Checks below used the committed lockfiles/existing installation; no fresh dependency installation or live deployment was claimed.
+
+| Command | Result / evidence boundary |
+|---|---|
+| `npm run test:server` | **126 passed / 12 files**. Includes 3 MOCK vertical-slice cases covering test EOA session, actual private inference adapter over fake HTTP, quota, immutable original/edit/approval, intent/arm/readback/discovery fixtures, update/close, private export and SQLite/session reopen; 502/invalid reply, stale approval, wrong owner and uncertain/empty/error paths. No sponsor service called. |
+| `npm run lint` | Passed root project's configured scope. |
+| `npm run typecheck` | Passed. |
+| `DOTENV_CONFIG_PATH=/dev/null DEPLOYER_PRIVATE_KEY= npm run test:contracts` | **5 passed** on the local simulated chain. Dotenv/deployer credential loading disabled. Initial sandbox invocation timed out on the external compiler-cache lock; approved retry passed, with no contracts needing compilation. No live Whitechain action. |
+| `npm run build` | Passed checkout-example build, Next production build and standalone asset/migration packaging. Existing checkout-example `use client` warning remains nonfatal. |
+| `npm run reference:typecheck` | Passed; repeated only after the narrow preview guard. |
+| `npm run reference:build` | Passed; repeated only after that same frontend fix. |
+| `npm run smoke:local` | Passed with approved local loopback access: actual standalone and Vite processes, auth/cookie/proxy/origin policy, private persistence/exports, fail-closed provider/quota, and real process restart. **Zero inference dispatches** and no external integration called. Vite emits a nonfatal `envFile` deprecation warning; the tested option still disables env-file loading in installed Vite 8.3.6. |
+| `git diff --check` | Passed. |
+
+Vite lint was skipped because `apps/web/package.json` defines no lint command. Real browser extension tests, live 0G/Arkiv, HTTPS hosting/persistent-volume restart, intended-user trial, third-party asset/license review and submission/video completion were not performed. Other than the documented compiler-cache retry and the narrow Vite recheck, the complete project verification sweep was run once after the implementation fixes.
+
+### BM-01 through BM-16 acceptance matrix
+
+“Offline tested” identifies implemented code exercised by local tests, not fulfilled live acceptance. Commands above are the executed evidence; paths below identify the focused source/tests.
+
+| BM | Current status | Evidence / remaining gate |
+|---|---|---|
+| BM-01 wallet identity | **Offline tested; browser incomplete** | `auth.ts`, `brief-auth-security.test.ts`, `backend.test.ts`, `brief-http.test.ts`; real proxy/session smoke passed. B must guard/serialize account changes and in-flight login/mutations; real wallet login remains unverified. |
+| BM-02 private intake | **Implemented/tested offline** | Strict DTOs and owner-bound `BriefService`; `brief-http.test.ts` plus vertical-slice create/ownership cases. |
+| BM-03 quota | **Implemented/tested offline** | `quota.ts`/`brief-runner.ts`, `brief-execution.test.ts`; actual usage/credit pool/dollar limits remain unmeasured. No checkout requirement. |
+| BM-04 private compilation | **Offline tested; live blocked** | Real adapter with MOCK responses in execution/smoke/vertical-slice tests. Historical operator HTTP 502 remains unresolved; no successful authorized private completion. |
+| BM-05 evidence | **Metadata handling offline tested; live unverified; independent verification incomplete** | `brief-inference.ts`, `brief-smoke.test.ts`; provider-reported/requested policy and unavailable independent verification remain distinct. App/probe do not implement chain-signer/signature/content verification. No real success identifiers or debit established. |
+| BM-06 durable execution | **Implemented/tested offline** | Atomic quota/lease, concurrent claims, bounded retries/uncertainty and recovery in `brief-execution.test.ts`; no claim of remote cancellation or exactly-once provider execution. |
+| BM-07 saved editing | **Implemented/tested offline** | Immutable input/model/evidence, revision CAS and persistence in execution/HTTP/vertical-slice tests. |
+| BM-08 exact approval | **Implemented/tested offline** | Allowlist/canonical SHA-256/revision checks, hostile-note structural isolation and edit/export races in contract/HTTP tests. Human semantic review remains essential. |
+| BM-09 owner publication | **Backend offline tested; browser incomplete/live unverified** | Prepared public-only intent, exclusive arm, actual SDK receipt/readback validation; publication/adapter/vertical-slice tests. B must wire prepare/arm/durable IDs before authorized wallet tests. |
+| BM-10 discovery | **Read adapter offline tested; UI controls incomplete/live unverified** | Indexed namespace/version/category/language/status/budget/deadline predicates and empty-vs-error behavior in adapter/reader/vertical-slice tests. B filter/detail/continuation controls and real indexed query evidence remain. |
+| BM-11 update/close | **Backend offline tested; live unverified** | Owner/base/hash checks, closed-content rule, last-confirmed preservation and old-intent/new-private-revision tests. No live owner mutation. Unknown/reverted locks lack safe cancellation/replacement. |
+| BM-12 native expiry | **Offline tested; live unverified** | Publication/adapter tests use expiry and independently observed blocks. No real short-lived entity or actual expiry evidence; deadline filter is not native expiry. |
+| BM-13 private recovery | **Implemented/tested offline; production host unverified** | Owner-scoped archive/exports, disk reopen and actual standalone process/session restart. Reads do not regenerate. Host persistent-volume/restart proof remains. |
+| BM-14 independent reader | **Executable/offline tested; live unverified** | `scripts/briefmint-arkiv-reader.ts`, `arkiv-reader-cli.test.ts`; no API/SQLite/session dependency, no real record discovered with API stopped. |
+| BM-15 truthful city | **Partially implemented; B work incomplete** | Real API calls retained and invalid preview crash guarded; Vite build/typecheck and HTTP proxy pass. Browser signing state, mutation/connection races, durable IDs, public filters/details and accessibility/manual wallet journey remain B-owned. |
+| BM-16 exports | **Implemented/tested offline** | HTTP/contract/vertical-slice tests: owner-only labelled private recovery and current-approved public projection only; no internal/private IDs/source/evidence in public export. |
+
+### Critical external gates and release blockers
+
+1. **Successful authorized 0G private inference**: historical HTTP 502 unresolved. Human must inspect usage/debit and separately authorize the single bounded probe; later app compilation is a distinct spend action. Real provider metadata, result quality and independent verification remain unresolved.
+2. **Real browser wallet/signature journey**: B must first finish the documented code changes. Account/chain changes, reload, rejection, two-tab arming, saved private state and mutation races need actual browser verification. No live signature is authorized by this checkpoint.
+3. **Real Arkiv lifecycle and independence**: owner-authorized create/query/update/close/native expiry plus the independent live reader with API stopped need entity/transaction/owner/block evidence. No live record was published or read in this final pass. Pre-live `str`-title entity compatibility is explicitly unresolved if such old records exist.
+
+Production HTTPS/one-process/persistent SQLite evidence, asset attribution/license checks, intended-user feedback, actual URLs, video under three minutes and ETHGlobal submission remain human/operator work. The final runbook is [LIVE_VALIDATION_AND_SUBMISSION.md](LIVE_VALIDATION_AND_SUBMISSION.md); [DEMO_NOTES.md](DEMO_NOTES.md) contains synthetic input and truthful claims. [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md) contains the single forwardable message; [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md) and [ARKIV_LIVE_PROBE.md](ARKIV_LIVE_PROBE.md) retain the precise consent gates. No new percentage, full-PRD completion, production readiness, push, merge, deployment, live inference or live wallet/Arkiv action is claimed.
