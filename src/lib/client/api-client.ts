@@ -172,8 +172,12 @@ export const api = {
   config(): Promise<PublicConfig> {
     return get<ConfigResponse>("/api/config");
   },
-  challenge(address: string): Promise<ChallengeResponse> {
-    return get<ChallengeResponse>(`/api/auth/challenge?address=${encodeURIComponent(address)}`);
+  challenge(address: string, purpose: "briefmint" | "legacy" = "legacy"): Promise<ChallengeResponse> {
+    const query = new URLSearchParams({ address });
+    // The server preserves the legacy chain (1874) when purpose is omitted.
+    // BriefMint must explicitly request its Arkiv chain (7794095).
+    if (purpose === "briefmint") query.set("purpose", "briefmint");
+    return get<ChallengeResponse>(`/api/auth/challenge?${query.toString()}`);
   },
   verify(challengeId: string, signature: string): Promise<VerifyResponse> {
     return post<VerifyResponse>("/api/auth/verify", { challengeId, signature });

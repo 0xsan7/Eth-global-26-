@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { useApproveBrief } from "@/lib/client/use-briefs";
+import { currentSessionGeneration, isCurrentSessionGeneration } from "@/lib/client/session-generation";
 import {
   hashPublicOpportunity,
   projectPublicOpportunity,
@@ -61,6 +62,7 @@ export default function ReleaseDesk({ brief, onSaved }: { brief: BriefView | nul
 
   const doApprove = async () => {
     setError(null);
+    const generation = currentSessionGeneration();
     try {
       const shown = projectPublicOpportunity(candidate, brief.draftRevision);
       const publicPayloadHash = await hashPublicOpportunity(shown);
@@ -68,6 +70,7 @@ export default function ReleaseDesk({ brief, onSaved }: { brief: BriefView | nul
         id: brief.id,
         req: { expectedRevision: brief.draftRevision, publicPayloadHash },
       });
+      if (!isCurrentSessionGeneration(generation)) return;
       onSaved(updated);
     } catch (e) {
       if (isApiError(e) && e.status === 409) setError("CONFLICT: revision changed — review the current preview before approving.");

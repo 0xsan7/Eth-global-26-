@@ -60,6 +60,10 @@ export interface OpportunityView {
   ownerAddress: Address;
   title: string;
   summary: string;
+  deliverables: string[];
+  acceptanceCriteria: string[];
+  exclusions: string[];
+  openQuestions: string[];
   category: "writing" | "design";
   language: "en";
   status: "open" | "closed";
@@ -81,6 +85,10 @@ export function toOpportunityView(record: OpportunityRecord): OpportunityView {
     ownerAddress: record.ownerAddress as Address,
     title: p.title,
     summary: p.summary,
+    deliverables: [...p.deliverables],
+    acceptanceCriteria: [...p.acceptanceCriteria],
+    exclusions: [...p.exclusions],
+    openQuestions: [...p.openQuestions],
     category: p.category,
     language: p.language,
     status: p.status,

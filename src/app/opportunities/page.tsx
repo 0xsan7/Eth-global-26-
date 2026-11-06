@@ -3,7 +3,7 @@
 // Works without a wallet session or the BriefMint API. An explicit Arkiv
 // access key (operator-provided public rate-limit key, never committed)
 // enables reads; failures stay distinct from an empty catalogue.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/app/AppShell";
 import OpportunityBoard from "@/components/briefs/OpportunityBoard";
 import OpportunityReader from "@/components/briefs/OpportunityReader";
@@ -18,40 +18,39 @@ export default function OpportunitiesPage() {
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [selected, setSelected] = useState<OpportunityView | null>(null);
   const [filters, setFilters] = useState<OpportunityFilters>({ status: "open" });
+  const readEpoch = useRef(0);
+  const rowCount = useRef(0);
 
   const load = useCallback(async (f: OpportunityFilters) => {
+    const epoch = ++readEpoch.current;
     setLoading(true);
     setError(null);
     try {
       const list = await readOpportunitiesIndependent({ accessKey: "" }, f);
-      setRows((prev) => {
-        if (prev.length > 0) setStale(true);
-        return list;
-      });
+      if (epoch !== readEpoch.current) return;
+      rowCount.current = list.length;
+      setRows(list);
       setStale(false);
       setLastRefresh(new Date().toISOString());
-      setSelected((prev) => prev ?? list[0] ?? null);
+      setSelected((prev) => list.find((row) => row.entityKey === prev?.entityKey) ?? list[0] ?? null);
     } catch {
-      if (rows.length > 0) {
+      if (epoch !== readEpoch.current) return;
+      if (rowCount.current > 0) {
         setStale(true);
         setError("Arkiv query failed — showing last confirmed list (stale).");
       } else {
         setError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn.");
       }
     } finally {
-      setLoading(false);
+      if (epoch === readEpoch.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await load({ status: "open" });
-      void cancelled;
-    })();
+    const timer = setTimeout(() => { void load({ status: "open" }); }, 0);
     return () => {
-      cancelled = true;
+      clearTimeout(timer);
+      readEpoch.current += 1;
     };
   }, [load]);
 

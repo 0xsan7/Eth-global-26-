@@ -14,6 +14,7 @@ import { readOpportunitiesIndependent } from "@/lib/arkiv/opportunities-independ
 import { briefmintApi, isApiError } from "@/lib/client/briefmint-api";
 import { useBriefs } from "@/lib/client/use-briefs";
 import { useSession } from "@/lib/client/use-session";
+import { isCurrentSessionGeneration, currentSessionGeneration } from "@/lib/client/session-generation";
 import type { BriefmintConfig, BriefView, OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 
 const ACTIVE_BRIEF_POLL = new Set(["running", "pending"]);
@@ -31,38 +32,43 @@ export default function HomePage() {
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [building, setBuilding] = useState<BuildingId>("home");
-  const [brief, setBrief] = useState<BriefView | null>(null);
-  const briefsQ = useBriefs(!!address);
+  const [storedBrief, setBrief] = useState<BriefView | null>(null);
+  const brief = address && storedBrief?.ownerAddress.toLowerCase() === address.toLowerCase() ? storedBrief : null;
+  const briefsQ = useBriefs(!!address, undefined, address);
   const briefSummaries = briefsQ.data?.briefs ?? [];
   const briefsLoading = briefsQ.isLoading;
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const briefOperationEpoch = useRef(0);
+  const previousBriefId = useRef<string | null | undefined>(undefined);
+  const opportunityReadEpoch = useRef(0);
+  const opportunityRowCount = useRef(0);
 
   const loadOpportunities = useCallback(async (filters: OpportunityFilters) => {
+    const epoch = ++opportunityReadEpoch.current;
     setOppLoading(true);
     setOppError(null);
     // Public discovery runs through the independent Arkiv reader: no backend
     // opportunities endpoint exists in the frozen contract.
     try {
       const list = await readOpportunitiesIndependent({ accessKey: "" }, filters);
-      setOpportunities((prev) => {
-        if (prev.length > 0) setOppStale(true);
-        return list;
-      });
+      if (epoch !== opportunityReadEpoch.current) return;
+      opportunityRowCount.current = list.length;
+      setOpportunities(list);
       setOppStale(false);
       setLastRefresh(new Date().toISOString());
       setSelectedKey((prev) => prev ?? list.find((o) => o.status === "open")?.entityKey ?? list[0]?.entityKey ?? null);
     } catch {
-      if (opportunities.length > 0) {
+      if (epoch !== opportunityReadEpoch.current) return;
+      if (opportunityRowCount.current > 0) {
         setOppStale(true);
         setOppError("Arkiv query failed — showing last confirmed list (stale). This does not mean records were withdrawn.");
       } else {
         setOppError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn or expired.");
       }
     } finally {
-      setOppLoading(false);
+      if (epoch === opportunityReadEpoch.current) setOppLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -109,35 +115,59 @@ export default function HomePage() {
   const prevAddress = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (prevAddress.current !== undefined && prevAddress.current !== address) {
+      briefOperationEpoch.current += 1;
       setBrief(null);
+      setRunBusy(false);
+      setRunError(null);
     }
     prevAddress.current = address;
   }, [address]);
 
+  useEffect(() => {
+    if (previousBriefId.current !== undefined && previousBriefId.current !== (brief?.id ?? null)) {
+      briefOperationEpoch.current += 1;
+    }
+    previousBriefId.current = brief?.id ?? null;
+  }, [brief?.id]);
+
   // Poll the active brief ~2s; reopening a saved brief just loads state.
   useEffect(() => {
     if (!brief || (!ACTIVE_BRIEF_POLL.has(brief.executionStatus) && brief.publication.status !== "pending")) return;
+    const epoch = briefOperationEpoch.current;
+    const id = brief.id;
     const t = setInterval(async () => {
       try {
-        setBrief(await briefmintApi.getBrief(brief.id));
+        const updated = await briefmintApi.getBrief(id, address);
+        if (epoch === briefOperationEpoch.current) setBrief(updated);
       } catch {
         /* keep last known state */
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [brief]);
+  }, [brief, address]);
 
   const handleRun = async () => {
-    if (!brief) return;
+    if (!brief || !address || brief.ownerAddress.toLowerCase() !== address.toLowerCase()) return;
+    const epoch = briefOperationEpoch.current;
+    const generation = currentSessionGeneration();
+    const id = brief.id;
     setRunBusy(true);
     setRunError(null);
     try {
-      const result = await briefmintApi.runBrief(brief.id);
-      setBrief(result.brief);
+      const result = await briefmintApi.runBrief(id, address);
+      if (epoch === briefOperationEpoch.current && isCurrentSessionGeneration(generation)) setBrief(result.brief);
     } catch (e) {
-      setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
+      if (epoch === briefOperationEpoch.current && isCurrentSessionGeneration(generation)) {
+        setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
+        // A failed dispatched attempt is persisted before its error is returned.
+        // Refresh only the brief record so the UI shows the consumed attempt count.
+        try {
+          const current = await briefmintApi.getBrief(id, address);
+          if (epoch === briefOperationEpoch.current && isCurrentSessionGeneration(generation)) setBrief(current);
+        } catch { /* Keep the current view if the recovery read is unavailable. */ }
+      }
     } finally {
-      setRunBusy(false);
+      if (epoch === briefOperationEpoch.current) setRunBusy(false);
     }
   };
 
@@ -207,7 +237,7 @@ export default function HomePage() {
           </div>
         }
       >
-        <CityPanel
+        <CityPanel key={address ?? "logged-out"}
           building={building}
           brief={brief}
           briefs={briefSummaries}

@@ -5,9 +5,11 @@
 // Canonical bounds: notes 250 words / 5000 chars / 20 paragraphs; title ≤120
 // chars; summary ≤1000 chars; budget integer cents or null; https contact;
 // deadline future within 7 days.
+import { useSession } from "@/lib/client/use-session";
 import { useState } from "react";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { briefmintApi } from "@/lib/client/briefmint-api";
+import { currentSessionGeneration, isCurrentSessionGeneration } from "@/lib/client/session-generation";
 import {
   BRIEF_LIMITS,
   privateNotesSchema,
@@ -32,6 +34,7 @@ function firstIssue(message: string): string {
 }
 
 export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
+  const { address } = useSession();
   const [notes, setNotes] = useState("");
   const [category, setCategory] = useState<"writing" | "design">("writing");
   const [title, setTitle] = useState("");
@@ -73,11 +76,13 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
   const submit = async () => {
     setError(null);
     setUnavailable(false);
+    if (!address) { setError("Connect the owner wallet and sign in before saving private notes."); return; }
     if (clientError) {
       setError(clientError);
       return;
     }
     setBusy(true);
+    const generation = currentSessionGeneration();
     try {
       const brief = await briefmintApi.createBrief({
         notes: notes.trim(),
@@ -90,7 +95,8 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
           deadline: deadline.trim(),
           contactUrl: contactUrl.trim() ? contactUrl.trim() : null,
         },
-      });
+      }, address);
+      if (!isCurrentSessionGeneration(generation)) return;
       setNotes("");
       onCreated(brief);
     } catch (e) {
@@ -170,7 +176,7 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
         </p>
       )}
       <div className="btn-row">
-        <button type="button" className="btn btn-primary" disabled={busy || !!clientError} onClick={submit}>
+        <button type="button" className="btn btn-primary" disabled={busy || !address || !!clientError} onClick={submit}>
           {busy ? "Saving…" : "Save private brief"}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={() => setNotes(DEMO_NOTES)} title="Fixture — never live evidence">

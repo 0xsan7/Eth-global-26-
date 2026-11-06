@@ -8,6 +8,7 @@ export default function BriefEvidence({ brief }: { brief: BriefView }) {
   return (
     <div className="card">
       <h3>Compilation evidence</h3>
+      {brief.publicationCopy && <p className="notice">Generation reused from the original brief, revision R{brief.publicationCopy.sourceRevision}. This copy made no inference request; the request evidence below belongs to that original generation.</p>}
       <dl>
         <div><dt>Execution</dt><dd>{brief.executionStatus} · attempts used {brief.attemptsUsed}{brief.retryEligible ? " · retry eligible" : ""}</dd></div>
         <div><dt>Review</dt><dd>{brief.review.status}{brief.review.status === "approved" ? ` · approved r${brief.review.approval.draftRevision}` : ""}</dd></div>

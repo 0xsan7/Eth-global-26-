@@ -2,8 +2,8 @@
 // Registry: real Arkiv opportunities through indexed queries.
 // Failed reads stay distinct from an empty catalogue; a failed refresh never
 // proves withdrawal or expiry. Closed records remain readable until expiry.
-// Text search filters client-side after the indexed fetch; category, status
-// and budget presence filter server-side through indexed fields.
+// Text search and budget presence filter client-side after the indexed fetch;
+// category and status filter server-side through indexed fields.
 import { useState } from "react";
 import type { OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 import { filterOpportunities } from "@/lib/shared/briefmint-validation";
@@ -104,6 +104,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
           <h3>Selected opportunity</h3>
           <dl>
             <div><dt>Title</dt><dd>{p.selected.title}</dd></div>
+            <div><dt>Summary</dt><dd>{p.selected.summary}</dd></div>
             <div><dt>Owner</dt><dd className="tc-mono">{p.selected.ownerAddress}</dd></div>
             <div><dt>Entity key</dt><dd className="tc-mono">{p.selected.entityKey}</dd></div>
             <div><dt>Revision / status</dt><dd>r{p.selected.revision} · {p.selected.status} · {p.selected.freshness}</dd></div>
@@ -111,6 +112,19 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
             <div><dt>Contact</dt><dd className="tc-mono">{p.selected.contactUrl ?? "none"}</dd></div>
             <div><dt>Expires at block</dt><dd className="tc-mono">{p.selected.expiresAtBlock ?? "not reported"}</dd></div>
           </dl>
+          {([
+            ["deliverables", "Deliverables"],
+            ["acceptanceCriteria", "Acceptance criteria"],
+            ["exclusions", "Exclusions"],
+            ["openQuestions", "Open questions"],
+          ] as const).map(([key, label]) => (
+            <section key={key}>
+              <h4>{label}</h4>
+              {p.selected![key].length > 0
+                ? <ul>{p.selected![key].map((text, index) => <li key={index}>{text}</li>)}</ul>
+                : <p className="tc-muted">None listed.</p>}
+            </section>
+          ))}
           <p className="tc-muted">Anyone may reuse the namespace tag; only the actual owner address above can mutate this record. Content renders as untrusted text.</p>
         </div>
       )}

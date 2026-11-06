@@ -10,7 +10,7 @@ import { useSession } from "@/lib/client/use-session";
 export default function BriefsPage() {
   const sessionQ = useSession();
   const address = sessionQ.address;
-  const briefsQ = useBriefs(!!address);
+  const briefsQ = useBriefs(!!address, undefined, address);
 
   let body: React.ReactNode;
   if (sessionQ.loading) {
