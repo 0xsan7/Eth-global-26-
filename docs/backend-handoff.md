@@ -1,5 +1,11 @@
 # Backend handoff
 
+## 0G first-request preflight — 6 November 2026
+
+Focused follow-up from `a99a0d2`: hardened the guarded smoke and added [the exact operator setup/runbook](briefmint/0g-preflight.md). A public-only CLI run passed with TeeML `0gm-1.0-35b-a3b`, one catalog provider and zero inference requests. Private routing/fallback policy retained; single POST, redirects rejected, explicit authorization, fresh catalog checks, smoke-only non-thinking JSON/1200-token request and safe latency/provider/billing reporting are tested. Normal backend generation defaults stay unchanged.
+
+90 server tests (16 new injected smoke cases), lint, typecheck and whitespace checks pass. No authenticated inference or operator-key access; independent verification remains unavailable, and request-time capacity/credits/quality/cost remain live gates. Full-PRD completion stays approximately **55%**. `a99a0d2` remains the preserved backend checkpoint; this follow-up is isolated preflight work, not a claim of live integration success.
+
 ## BriefMint durable backend checkpoint — 6 November 2026
 
 Resumed and preserved the uncommitted implementation on `codex/payment-backend` from committed foundation `5674d82`. Existing work supplied migration 002, private lifecycle services, quota/runner/compiler, publication service, auth purpose selection, draft handoff and guarded provider smoke. This continuation completed runtime/HTTP routing, migration 003 evidence/identity hardening, original-response persistence, standalone migration packaging, strict auth queries, security fixes, regression tests and the [Agent B handoff](briefmint/agent-b-handoff.md).
