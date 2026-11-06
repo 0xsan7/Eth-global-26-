@@ -6,11 +6,14 @@ import "./city.css";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArchiveDecor, PlanningDecor, RegistryDecor, ReleaseDecor, StudioDecor, type SceneFx } from "./BuildingDecor";
 import { GroundAmbient, SkyAmbient } from "./CityAmbient";
-import IsoBuilding, { type BuildingTag } from "./IsoBuilding";
+import IsoBuilding from "./IsoBuilding";
 import Worker from "./Worker";
 import { sceneFromCityState, type BriefSceneTarget } from "./brief-state-to-scene";
 import { CITY_FIXTURES } from "./city-fixtures";
 import { deriveCityState, type CityState } from "./city-state";
+import { isoGeometry } from "./iso-geometry";
+import type { CityEngine, MotionMode } from "./pixi/city-engine";
+import { stateLabelFor, tagFor, type BuildingTag } from "./scene-labels";
 import { BUILDINGS, BUILDINGS_BACK_TO_FRONT, VIEWBOX, type BuildingDef, type BuildingId } from "./scene-config";
 
 interface CitySceneProps {
@@ -44,45 +47,6 @@ function nextFx(prev: CityState, next: CityState, fx: SceneFx): SceneFx {
   return out;
 }
 
-function tagFor(id: BuildingId, city: CityState, fixture: boolean): BuildingTag | null {
-  if (id === "studio") {
-    if (city.studio === "running") return { text: "compiling…", tone: "info" };
-    if (city.studio === "failed") return { text: "⚠ failed — unresolved", tone: "warn" };
-    if (city.studio === "interrupted") return { text: "⚠ interrupted — unresolved", tone: "warn" };
-  }
-  if (id === "treasury") {
-    if (city.release === "awaiting") return { text: "awaiting review", tone: "info" };
-    if (city.release === "approved") return { text: "✓ approved", tone: "ok" };
-  }
-  if (id === "registry") {
-    switch (city.registry) {
-      case "pending":
-        return { text: "waiting for confirmation", tone: "info" };
-      case "live":
-        // Fixture state never carries a live-looking label.
-        return fixture ? { text: "fixture — not published", tone: "muted" } : { text: "live on Arkiv", tone: "ok" };
-      case "closed":
-        return { text: "closed", tone: "muted" };
-      case "expired":
-        return { text: "expired (confirmed)", tone: "muted" };
-      case "stale":
-        return { text: "stale read — not expired", tone: "warn" };
-      case "unavailable":
-        return { text: "read unavailable", tone: "warn" };
-    }
-  }
-  return null;
-}
-
-function stateLabelFor(id: BuildingId, city: CityState): string | undefined {
-  if (id === "home") return city.planning.lit ? "draft saved" : undefined;
-  if (id === "studio") return city.studio === "idle" ? undefined : city.studio;
-  if (id === "treasury") return city.release === "idle" ? undefined : city.release === "awaiting" ? "awaiting review" : "current revision approved";
-  if (id === "registry") return city.registry === "none" ? undefined : city.registry;
-  if (id === "archive") return city.archive.boxes ? "private brief saved" : undefined;
-  return undefined;
-}
-
 function decorFor(def: BuildingDef, city: CityState, fx: SceneFx): ReactNode {
   const p = { def, city, fx };
   switch (def.id) {
@@ -97,6 +61,19 @@ function decorFor(def: BuildingDef, city: CityState, fx: SceneFx): ReactNode {
     case "archive":
       return <ArchiveDecor {...p} />;
   }
+}
+
+/** Hit area over a building in the canvas, as viewBox percentages. */
+function hitRect(def: BuildingDef) {
+  const g = isoGeometry(def);
+  const top = g.apex.y - 10;
+  const bottom = def.cy + g.hh + 34;
+  return {
+    left: `${((def.cx - def.hw) / VIEWBOX.w) * 100}%`,
+    top: `${(top / VIEWBOX.h) * 100}%`,
+    width: `${((def.hw * 2) / VIEWBOX.w) * 100}%`,
+    height: `${((bottom - top) / VIEWBOX.h) * 100}%`,
+  };
 }
 
 const subscribeNoop = () => () => {};
@@ -128,6 +105,57 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
     setPrev({ key: cityKey, city, fx });
   }
 
+  const isFixture = Boolean(fixture);
+  // Identity changes only when the derived state content changes.
+  const stableCity = prev.city;
+  const hostRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<CityEngine | null>(null);
+  const modeRef = useRef<MotionMode>("on");
+  const [engineReady, setEngineReady] = useState(false);
+
+  // Game renderer (PixiJS) loads client-side only; on any failure the SVG scene stays.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let cancelled = false;
+    let engine: CityEngine | null = null;
+    import("./pixi/city-engine")
+      .then(({ CityEngine }) => CityEngine.create(host))
+      .then((e) => {
+        if (cancelled) {
+          e.destroy();
+          return;
+        }
+        engine = e;
+        e.setMotion(modeRef.current);
+        engineRef.current = e;
+        setEngineReady(true);
+      })
+      .catch(() => {
+        /* WebGL/canvas unavailable: keep the SVG scene */
+      });
+    return () => {
+      cancelled = true;
+      engine?.destroy();
+      engineRef.current = null;
+    };
+  }, []);
+
+  // Push the derived state to the renderer. The renderer never writes state back.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engineReady || !engine) return;
+    const tags = Object.fromEntries(BUILDINGS.map((b) => [b.id, tagFor(b.id, stableCity, isFixture)])) as Record<
+      BuildingId,
+      BuildingTag | null
+    >;
+    engine.setState(stableCity, tags);
+  }, [engineReady, stableCity, isFixture]);
+
+  useEffect(() => {
+    if (engineReady) engineRef.current?.setSelected(selected);
+  }, [engineReady, selected]);
+
   // Global motion switch: off for reduced motion, paused when hidden or off-screen.
   useEffect(() => {
     const root = rootRef.current;
@@ -135,8 +163,10 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     let onScreen = true;
     const apply = () => {
-      const mode = mq.matches ? "off" : document.hidden || !onScreen ? "paused" : "on";
+      const mode: MotionMode = mq.matches ? "off" : document.hidden || !onScreen ? "paused" : "on";
       root.setAttribute("data-anim", mode);
+      modeRef.current = mode;
+      engineRef.current?.setMotion(mode);
     };
     const io =
       typeof IntersectionObserver !== "undefined"
@@ -175,11 +205,14 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== "mouse" || rootRef.current?.getAttribute("data-anim") !== "on") return;
     const r = e.currentTarget.getBoundingClientRect();
-    setParallax(((e.clientX - r.left) / r.width - 0.5) * 2, ((e.clientY - r.top) / r.height - 0.5) * 2);
+    const dx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+    const dy = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    if (engineRef.current) engineRef.current.setParallax(dx, dy);
+    else setParallax(dx, dy);
   };
 
   return (
-    <div className="city-scene" ref={rootRef} data-anim="on">
+    <div className="city-scene" ref={rootRef} data-anim="on" data-engine={engineReady ? "ready" : "svg"}>
       {/* Keyboard-accessible building navigation (buttons). */}
       <nav className="city-toolbar" aria-label="City buildings">
         {BUILDINGS_BACK_TO_FRONT.map((b) => (
@@ -214,7 +247,10 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
       <div
         className="city-frame"
         onPointerMove={onPointerMove}
-        onPointerLeave={() => setParallax(0, 0)}
+        onPointerLeave={() => {
+          setParallax(0, 0);
+          engineRef.current?.setParallax(0, 0);
+        }}
       >
         <svg
           viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
@@ -271,6 +307,29 @@ export default function CityScene({ selected, onSelect, scene: realScene, jobSta
           />
           <SkyAmbient layerRef={skyRef} />
         </svg>
+        <div className="city-canvas" ref={hostRef} />
+        {engineReady &&
+          BUILDINGS_BACK_TO_FRONT.map((b) => {
+            const s = stateLabelFor(b.id, city);
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className="city-hit"
+                style={hitRect(b)}
+                aria-label={`${b.name}: ${b.description}${s ? ` Current state: ${s}.` : ""}`}
+                aria-pressed={selected === b.id}
+                onClick={() => {
+                  onSelect(b.id);
+                  engineRef.current?.ping(b.id);
+                }}
+                onPointerEnter={() => engineRef.current?.setHover(b.id)}
+                onPointerLeave={() => engineRef.current?.setHover(null)}
+                onFocus={() => engineRef.current?.setHover(b.id)}
+                onBlur={() => engineRef.current?.setHover(null)}
+              />
+            );
+          })}
       </div>
       <div className={`city-status${city.worker.unresolved ? " city-status-warn" : ""}`}>
         <p className="city-caption" role="status" aria-live="polite">

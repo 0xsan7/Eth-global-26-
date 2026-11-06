@@ -6,10 +6,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { doorQuad, isoGeometry, pts, windowQuad } from "./iso-geometry";
 import type { BuildingDef } from "./scene-config";
 
-export interface BuildingTag {
-  text: string;
-  tone: "info" | "ok" | "warn" | "muted";
-}
+import type { BuildingTag } from "./scene-labels";
 
 interface IsoBuildingProps {
   def: BuildingDef;
@@ -160,13 +157,14 @@ export default function IsoBuilding({
             </>
           ) : (
             <>
-              <polygon points={pts([Lt, Rt, Bt, Tt])} fill={roofColor} stroke="#6e3a22" strokeWidth={1.5} />
+              {/* flat roof: thin parapet bands, then the slab */}
+              <polygon points={pts([Lt, Bt, { x: Bt.x, y: Bt.y - 6 }, { x: Lt.x, y: Lt.y - 6 }])} fill="#a8562f" stroke="#6e3a22" strokeWidth={1} />
+              <polygon points={pts([Bt, Rt, { x: Rt.x, y: Rt.y - 6 }, { x: Bt.x, y: Bt.y - 6 }])} fill="#8f4826" stroke="#6e3a22" strokeWidth={1} />
               <polygon
-                points={pts([Lt, Bt, B, L])}
+                points={pts([Lt, Tt, Rt, Bt].map((p) => ({ x: p.x, y: p.y - 6 })))}
                 fill={roofColor}
                 stroke="#6e3a22"
-                strokeWidth={1}
-                filter="brightness(0.85)"
+                strokeWidth={1.5}
               />
             </>
           )}

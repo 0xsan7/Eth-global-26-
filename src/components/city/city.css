@@ -3,6 +3,21 @@
    ("on" | "paused" | "off") switches every animation; reduced motion = off. */
 
 .city-scene { position: relative; }
+.city-scene .city-frame { position: relative; }
+.city-canvas { position: absolute; inset: 0; opacity: 0; transition: opacity 300ms ease; pointer-events: none; }
+.city-scene[data-engine="ready"] .city-canvas { opacity: 1; }
+.city-scene[data-engine="ready"] .city-frame > svg { visibility: hidden; }
+.city-scene[data-engine="ready"] .city-frame > svg * { animation: none !important; }
+.city-hit {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.city-hit:focus-visible { outline: 3px solid var(--tc-focus, #1a5fb4); outline-offset: -3px; }
 .city-scene .tc-worker { transition: none; will-change: transform; }
 
 /* shared transform boxes */

@@ -32,8 +32,12 @@ export type StudioVisual = "idle" | "running" | "failed" | "interrupted";
 export type ReleaseVisual = "idle" | "awaiting" | "approved";
 export type RegistryVisual = "none" | "pending" | "live" | "closed" | "expired" | "stale" | "unavailable";
 
+export type QuestKind = "action" | "wait" | "warn";
+
 export interface CityState {
   briefId: string | null;
+  /** Game-style marker over the building where the next real step happens. */
+  quest: { building: BuildingId; kind: QuestKind } | null;
   worker: { building: BuildingId | null; pose: WorkerPose; carry: WorkerCarry; unresolved: boolean };
   planning: { lit: boolean; privateParcel: boolean };
   studio: StudioVisual;
@@ -104,11 +108,32 @@ function registryText(v: RegistryVisual, last: PublicationStatus): string {
   }
 }
 
+function questFor(i: CityStateInput, registry: RegistryVisual, approved: boolean): CityState["quest"] {
+  switch (i.execution) {
+    case null:
+      return { building: "home", kind: "action" };
+    case "draft":
+      return { building: "studio", kind: "action" };
+    case "running":
+      return null;
+    case "failed":
+    case "interrupted":
+      return { building: "studio", kind: "warn" };
+  }
+  if (registry === "pending") return { building: "registry", kind: "wait" };
+  if (registry === "stale" || registry === "unavailable") return { building: "registry", kind: "warn" };
+  if (i.reopened) return null;
+  if (!approved) return { building: "treasury", kind: "action" };
+  if (registry === "none") return { building: "registry", kind: "action" };
+  return null;
+}
+
 export function deriveCityState(i: CityStateInput): CityState {
   const registry = registryVisual(i);
   const approved = i.execution === "ready" && i.review === "approved" && i.approvalCurrent;
   const base = {
     briefId: i.briefId,
+    quest: questFor(i, registry, approved),
     planning: { lit: i.execution === "draft", privateParcel: i.execution !== null },
     studio: (i.execution === "running" || i.execution === "failed" || i.execution === "interrupted"
       ? i.execution

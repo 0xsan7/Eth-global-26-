@@ -335,7 +335,30 @@ test("city mapping: truthfulness invariants hold for every state combination", (
     if (s.worker.pose === "waiting") assert.equal(s.registry, "pending", ctx);
     if (i.execution === "ready" && s.registry === "pending") assert.equal(s.worker.building, "registry", ctx);
     if (i.execution === null) assert.equal(s.worker.building, null, ctx);
+    // Quest marker: never on running work; warn only for unresolved work or bad reads.
+    if (i.execution === "running") assert.equal(s.quest, null, ctx);
+    if (s.quest?.kind === "warn") {
+      assert.ok(s.worker.unresolved || s.registry === "stale" || s.registry === "unavailable", ctx);
+    }
+    if (s.quest?.kind === "wait") assert.equal(s.registry, "pending", ctx);
+    if (s.worker.unresolved) assert.deepEqual(s.quest, { building: "studio", kind: "warn" }, ctx);
   }
+});
+
+test("city mapping: quest marker points at the next real step", () => {
+  const q = (over: Partial<CityStateInput>) => deriveCityState(input(over)).quest;
+  assert.deepEqual(deriveCityState(NO_BRIEF_INPUT).quest, { building: "home", kind: "action" });
+  assert.deepEqual(q({ execution: "draft" }), { building: "studio", kind: "action" });
+  assert.equal(q({ execution: "running" }), null);
+  assert.deepEqual(q({}), { building: "treasury", kind: "action" });
+  const approved = { review: "approved" as const, approvalCurrent: true };
+  assert.deepEqual(q(approved), { building: "registry", kind: "action" });
+  assert.deepEqual(q({ ...approved, publication: "pending" }), { building: "registry", kind: "wait" });
+  assert.equal(q({ ...approved, publication: "live", publicationConfirmed: true }), null);
+  assert.deepEqual(q({ ...approved, publication: "live", publicationConfirmed: true, freshness: "stale" }), {
+    building: "registry",
+    kind: "warn",
+  });
 });
 
 test("city mapping: adapter from PrivateBrief", () => {

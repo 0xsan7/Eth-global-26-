@@ -106,3 +106,19 @@ What Agent A must merge or do next:
   status text are labelled DEV FIXTURE and are compiled out of production builds.
 - Not done: `src/app/page.tsx` never sets `reopened`, so the worker never goes to the
   Archive yet. Worker at Archive needs a page-level flag (outside the city files).
+
+### Game renderer (PixiJS)
+
+- Added `pixi.js` 8.22.0 (exact). `src/components/city/pixi/city-engine.ts` draws the city
+  procedurally on a WebGL canvas (canvas fallback): floating island with cliffs, water,
+  waves and foam, detailed buildings, a character with walk cycle, particles, boat, birds
+  and cloud shadows. Quest markers come from the pure `CityState.quest` (tested).
+- The engine only reads `CityState`; it has no callbacks into React, the API or the wallet.
+  It is loaded with a dynamic import on the client. The SVG scene is the server render and
+  the fallback if the engine fails, and keeps the layout size so nothing shifts.
+- Accessibility: transparent HTML buttons over each building (Enter/Space, focus
+  outline, state in the accessible name); the toolbar and aria-live status are unchanged.
+  Reduced motion renders a single static frame per state change; a hidden tab or an
+  off-screen scene stops the Pixi ticker.
+- The worker uses engine-only standing spots on the street (`STAND`) so it never hides
+  behind nameplates; the mapping still decides which building it belongs to.
