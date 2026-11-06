@@ -17,7 +17,7 @@ export default function ReleaseDesk({ brief, onSaved }: { brief: PrivateBrief | 
   const [error, setError] = useState<string | null>(null);
   const approve = useApproveBrief();
 
-  if (!brief) return <p className="tc-muted">Save a private brief at the Creator&apos;s Home first.</p>;
+  if (!brief) return <p className="tc-muted">Save a private brief at the Planning Desk first.</p>;
   if (!brief.editedDraft && !brief.immutableModelResult)
     return <p className="tc-muted">Nothing compiled to preview yet — run compilation at the AI Studio.</p>;
 
