@@ -1,6 +1,6 @@
 // City scene configuration — positions, streets and waypoints.
 // Original fixed geometry for the Tool City neighbourhood (SVG viewBox 640x420).
-// No game engine, no pathfinding: the worker jumps between fixed waypoints.
+// No game engine, no pathfinding: the worker walks fixed street waypoints.
 
 export type BuildingId = "registry" | "home" | "treasury" | "studio" | "archive";
 
@@ -41,7 +41,7 @@ export const BUILDINGS: BuildingDef[] = [
     wallH: 64,
     roof: "hip",
     roofColor: "#c96f4a",
-    description: "Public opportunities from indexed Arkiv records.",
+    description: "Publish, browse and manage public opportunities on Arkiv.",
     waypoint: { x: 150, y: 232 },
   },
   {
@@ -53,7 +53,7 @@ export const BUILDINGS: BuildingDef[] = [
     wallH: 74,
     roof: "hip",
     roofColor: "#b85c38",
-    description: "Exact public preview and revision-bound approval.",
+    description: "Review the public preview and approve the exact revision.",
     waypoint: { x: 330, y: 212 },
   },
   {
@@ -65,19 +65,19 @@ export const BUILDINGS: BuildingDef[] = [
     wallH: 58,
     roof: "hip",
     roofColor: "#2a9d8f",
-    description: "Private compilation state and honest evidence.",
+    description: "Private compilation of your notes into a structured brief.",
     waypoint: { x: 498, y: 240 },
   },
   {
     id: "home",
-    name: "Creator's Home",
+    name: "Planning Desk",
     cx: 132,
     cy: 298,
     hw: 50,
     wallH: 44,
     roof: "hip",
     roofColor: "#c96f4a",
-    description: "Private notes intake and saved draft review.",
+    description: "Private notes plus public parameters, saved as a private brief.",
     waypoint: { x: 132, y: 252 },
   },
   {
@@ -89,7 +89,7 @@ export const BUILDINGS: BuildingDef[] = [
     wallH: 50,
     roof: "flat",
     roofColor: "#c96f4a",
-    description: "Persisted private briefs and saved revisions.",
+    description: "Reopen or export saved private briefs.",
     waypoint: { x: 488, y: 250 },
   },
 ];

@@ -212,3 +212,180 @@ test("briefStateToScene maps workflow state to buildings, idle to plaza", () => 
   assert.equal(briefStateToScene(approvedLive).building, "registry");
   assert.equal(briefStateToScene(brief({ executionStatus: "failed", error: { code: "PROVIDER_FAILED", message: "x" } })).unresolved, true);
 });
+
+// --- Truthful city: pure state mapping (PRD §5, §10, BM-15) ---
+import {
+  cityInputFromBrief,
+  deriveCityState,
+  NO_BRIEF_INPUT,
+  type CityStateInput,
+} from "../../src/components/city/city-state";
+import {
+  easeInOut,
+  pathLength,
+  pointAlong,
+  streetRoute,
+  walkDurationMs,
+  JUNCTION,
+  MAX_WALK_MS,
+  MIN_WALK_MS,
+  STREET_X,
+  STREET_Y,
+} from "../../src/components/city/walk-path";
+import { BUILDING_BY_ID } from "../../src/components/city/scene-config";
+import type { BriefFreshness, ExecutionStatus, PublicationStatus, ReviewStatus } from "../../src/lib/shared/briefmint";
+
+const EXECUTIONS: Array<ExecutionStatus | null> = [null, "draft", "running", "ready", "failed", "interrupted"];
+const REVIEWS: ReviewStatus[] = ["unreviewed", "approved"];
+const PUBLICATIONS: PublicationStatus[] = ["unpublished", "pending", "live", "closed", "expired"];
+const FRESHNESS: BriefFreshness[] = ["fresh", "stale", "unavailable"];
+
+function allInputs(): CityStateInput[] {
+  const out: CityStateInput[] = [];
+  for (const execution of EXECUTIONS)
+    for (const review of REVIEWS)
+      for (const approvalCurrent of [false, true])
+        for (const publication of PUBLICATIONS)
+          for (const publicationConfirmed of [false, true])
+            for (const freshness of FRESHNESS)
+              for (const reopened of [false, true])
+                out.push({
+                  briefId: execution ? "b1" : null,
+                  execution,
+                  review,
+                  approvalCurrent,
+                  publication,
+                  publicationConfirmed,
+                  freshness,
+                  observedAt: publicationConfirmed ? "2026-11-06T00:00:00Z" : null,
+                  reopened,
+                });
+  return out;
+}
+
+const input = (over: Partial<CityStateInput>): CityStateInput => ({
+  ...NO_BRIEF_INPUT,
+  briefId: "b1",
+  execution: "ready",
+  ...over,
+});
+
+test("city mapping: worker location table", () => {
+  const loc = (over: Partial<CityStateInput>) => deriveCityState(input(over)).worker;
+  assert.equal(deriveCityState(NO_BRIEF_INPUT).worker.building, null);
+  assert.deepEqual(loc({ execution: "draft" }), { building: "home", pose: "working", carry: "notes", unresolved: false });
+  assert.equal(loc({ execution: "running" }).building, "studio");
+  assert.equal(loc({ execution: "ready" }).building, "treasury");
+  const approved = { review: "approved" as const, approvalCurrent: true };
+  assert.deepEqual(loc(approved), { building: "treasury", pose: "idle", carry: "brief", unresolved: false });
+  assert.deepEqual(loc({ ...approved, publication: "pending" }), {
+    building: "registry",
+    pose: "waiting",
+    carry: "brief",
+    unresolved: false,
+  });
+  for (const publication of ["live", "closed"] as const) {
+    assert.equal(loc({ ...approved, publication, publicationConfirmed: true }).building, "registry");
+  }
+  assert.equal(loc({ ...approved, reopened: true }).building, "archive");
+  for (const execution of ["failed", "interrupted"] as const) {
+    assert.deepEqual(loc({ execution }), { building: "studio", pose: "stalled", carry: "none", unresolved: true });
+  }
+});
+
+test("city mapping: truthfulness invariants hold for every state combination", () => {
+  const inputs = allInputs();
+  assert.equal(inputs.length, 6 * 2 * 2 * 5 * 2 * 3 * 2);
+  for (const i of inputs) {
+    const s = deriveCityState(i);
+    const ctx = JSON.stringify(i);
+    // Determinism + serializability.
+    assert.deepEqual(deriveCityState(i), s, ctx);
+    assert.deepEqual(JSON.parse(JSON.stringify(s)), s, ctx);
+    assert.ok(s.statusText.length > 0, ctx);
+    // Live only with reconciled entity evidence and a fresh read.
+    if (s.registry === "live") {
+      assert.ok(i.publication === "live" && i.publicationConfirmed && i.freshness === "fresh", ctx);
+    }
+    if (i.publication === "live" && !i.publicationConfirmed) assert.equal(s.registry, "pending", ctx);
+    // Expired/closed only from a fresh confirmed query; failed reads are stale/unavailable.
+    if (s.registry === "expired") assert.ok(i.publication === "expired" && i.freshness === "fresh", ctx);
+    if (s.registry === "closed") assert.ok(i.publication === "closed" && i.freshness === "fresh", ctx);
+    if (i.freshness !== "fresh" && ["live", "closed", "expired"].includes(i.publication) && s.registry !== "pending") {
+      assert.equal(s.registry, i.freshness, ctx);
+    }
+    if (i.publication === "unpublished") assert.equal(s.registry, "none", ctx);
+    // Approved visuals only for the current approved, ready revision.
+    if (s.release === "approved") {
+      assert.ok(i.execution === "ready" && i.review === "approved" && i.approvalCurrent, ctx);
+    }
+    // Running is the only state that animates the studio as working.
+    assert.equal(s.studio === "running", i.execution === "running", ctx);
+    // Failed/interrupted never look resolved or successful.
+    if (i.execution === "failed" || i.execution === "interrupted") {
+      assert.equal(s.worker.pose, "stalled", ctx);
+      assert.equal(s.worker.unresolved, true, ctx);
+      assert.equal(s.studio, i.execution, ctx);
+      assert.notEqual(s.release, "approved", ctx);
+    } else {
+      assert.equal(s.worker.unresolved, false, ctx);
+      assert.notEqual(s.worker.pose, "stalled", ctx);
+    }
+    // Waiting pose only for pending publication of a ready brief.
+    if (s.worker.pose === "waiting") assert.equal(s.registry, "pending", ctx);
+    if (i.execution === "ready" && s.registry === "pending") assert.equal(s.worker.building, "registry", ctx);
+    if (i.execution === null) assert.equal(s.worker.building, null, ctx);
+  }
+});
+
+test("city mapping: adapter from PrivateBrief", () => {
+  assert.deepEqual(cityInputFromBrief(null), NO_BRIEF_INPUT);
+  const live = brief({
+    reviewStatus: "approved",
+    draftRevision: 2,
+    approval: {
+      briefId: "brief-test-1",
+      draftRevision: 1,
+      canonicalPublicPayload: projectPublicPayload(brief()),
+      publicPayloadHash: hashPublicPayload(projectPublicPayload(brief())),
+      approvedBy: "0x1111111111111111111111111111111111111111",
+      approvedAt: new Date().toISOString(),
+    },
+  });
+  // Edit after approval (revision 2 vs approved 1): approval is not current.
+  assert.equal(cityInputFromBrief(live).approvalCurrent, false);
+  assert.equal(deriveCityState(cityInputFromBrief(live)).release, "awaiting");
+  // A tx hash alone is not live.
+  const txOnly = brief({
+    publication: { ...brief().publication, lastObservedStatus: "live", lastConfirmedTxHash: "0xaa", entityKey: null },
+  });
+  assert.equal(deriveCityState(cityInputFromBrief(txOnly)).registry, "pending");
+});
+
+test("walk path: routes stay on streets and timing is proportional", () => {
+  const home = BUILDING_BY_ID.home.waypoint;
+  const studio = BUILDING_BY_ID.studio.waypoint;
+  const desk = BUILDING_BY_ID.treasury.waypoint;
+  const r1 = streetRoute(home, studio);
+  assert.deepEqual(r1, [home, { x: home.x, y: STREET_Y }, { x: studio.x, y: STREET_Y }, studio]);
+  const r2 = streetRoute(home, desk);
+  assert.ok(r2.some((p) => p.x === JUNCTION.x && p.y === JUNCTION.y));
+  assert.deepEqual(r2[r2.length - 2], { x: STREET_X, y: desk.y });
+  // Every interior segment is axis-aligned (along a street).
+  for (const r of [r1, r2, streetRoute(desk, BUILDING_BY_ID.archive.waypoint)]) {
+    for (let k = 2; k < r.length - 1; k++) assert.ok(r[k].x === r[k - 1].x || r[k].y === r[k - 1].y);
+  }
+  assert.deepEqual(streetRoute(home, home), [home]);
+  assert.equal(walkDurationMs(0), 0);
+  assert.equal(walkDurationMs(1), MIN_WALK_MS);
+  assert.equal(walkDurationMs(1e6), MAX_WALK_MS);
+  assert.equal(walkDurationMs(140), 2000);
+  assert.equal(easeInOut(0), 0);
+  assert.equal(easeInOut(1), 1);
+  assert.ok(Math.abs(easeInOut(0.5) - 0.5) < 1e-9);
+  const mid = pointAlong(r1, 0.5);
+  assert.ok(Math.abs(pathLength(r1) / 2 - (Math.abs(mid.x - home.x) + Math.abs(home.y - STREET_Y))) < 1e-6);
+  assert.equal(mid.dx, 1);
+  assert.deepEqual(pointAlong(r1, 1), { x: studio.x, y: studio.y, dx: 0 });
+  assert.deepEqual(streetRoute(home, studio), r1);
+});

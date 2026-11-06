@@ -1,0 +1,197 @@
+/* Tool City scene motion + state styles. Only transform, opacity and
+   stroke-dashoffset are animated. The scene root's data-anim attribute
+   ("on" | "paused" | "off") switches every animation; reduced motion = off. */
+
+.city-scene { position: relative; }
+.city-scene .tc-worker { transition: none; will-change: transform; }
+
+/* shared transform boxes */
+.city-scene .tc-tree,
+.city-scene .tc-jet,
+.city-scene .tc-puff,
+.city-scene .tc-data-dot,
+.city-scene .tc-worker-torso,
+.city-scene .tc-bldg-body,
+.city-scene .tc-bldg-pop,
+.city-scene .tc-emblem,
+.city-scene .tc-boxes { transform-box: fill-box; transform-origin: 50% 100%; }
+.city-scene .tc-ripple,
+.city-scene .tc-shimmer,
+.city-scene .tc-dish,
+.city-scene .tc-orbit,
+.city-scene .tc-scan,
+.city-scene .tc-approved,
+.city-scene .tc-bird,
+.city-scene .tc-bldg-shadow,
+.city-scene .tc-worker-head { transform-box: fill-box; transform-origin: 50% 50%; }
+.city-scene .tc-leg { transform-box: fill-box; transform-origin: 50% 0; }
+.city-scene .tc-door { transform-box: fill-box; transform-origin: 0 50%; transition: transform 260ms ease-out; }
+
+/* ---------- A. Ambient life ---------- */
+.tc-tree { animation: tc-sway 5.5s ease-in-out var(--d, 0s) infinite alternate; }
+.tc-lamp-glow { opacity: 0.35; animation: tc-breathe 4.2s ease-in-out var(--d, 0s) infinite alternate; }
+.tc-ripple { opacity: 0; animation: tc-ripple 2.6s ease-out var(--d, 0s) infinite; }
+.tc-jet { animation: tc-jet 0.9s ease-in-out infinite alternate; }
+.tc-shimmer { opacity: 0.6; animation: tc-shimmer 3.2s ease-in-out infinite alternate; }
+.tc-cloud { opacity: 0.07; will-change: transform; animation: tc-drift var(--t, 90s) linear var(--d, 0s) infinite; }
+.tc-birds { will-change: transform; animation: tc-flock 42s linear -12s infinite; }
+.tc-bird { animation: tc-flap 0.6s ease-in-out var(--d, 0s) infinite alternate; }
+.tc-puff { opacity: 0; animation: tc-smoke 4.2s ease-out var(--d, 0s) infinite; }
+
+@keyframes tc-sway { from { transform: rotate(-1.6deg); } to { transform: rotate(1.6deg); } }
+@keyframes tc-breathe { from { opacity: 0.22; } to { opacity: 0.5; } }
+@keyframes tc-ripple { from { transform: scale(0.5); opacity: 0.8; } to { transform: scale(1.5); opacity: 0; } }
+@keyframes tc-jet { from { transform: scaleY(0.72); } to { transform: scaleY(1); } }
+@keyframes tc-shimmer { from { transform: translateX(-3px); opacity: 0.4; } to { transform: translateX(6px); opacity: 0.85; } }
+@keyframes tc-drift { from { transform: translateX(-180px); } to { transform: translateX(820px); } }
+@keyframes tc-flock { from { transform: translate(-60px, 70px); } to { transform: translate(700px, 24px); } }
+@keyframes tc-flap { from { transform: scaleY(1); } to { transform: scaleY(0.35); } }
+@keyframes tc-smoke {
+  0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  15% { opacity: 0.75; }
+  100% { transform: translate(7px, -24px) scale(1.5); opacity: 0; }
+}
+
+/* ---------- B. Worker ---------- */
+.tc-worker[data-walking] .tc-leg-l { animation: tc-leg 0.46s ease-in-out infinite alternate; }
+.tc-worker[data-walking] .tc-leg-r { animation: tc-leg 0.46s ease-in-out infinite alternate-reverse; }
+.tc-worker[data-walking] .tc-worker-torso { animation: tc-bob 0.23s ease-in-out infinite alternate; }
+.tc-worker:not([data-walking]):not([data-pose="stalled"]) .tc-worker-torso { animation: tc-breath 3.2s ease-in-out infinite alternate; }
+.tc-worker:not([data-walking]):not([data-pose="stalled"]) .tc-worker-head { animation: tc-look 9s ease-in-out infinite; }
+.tc-worker[data-pose="stalled"] .tc-worker-body { transform: rotate(-9deg) translateY(1px); transform-box: fill-box; transform-origin: 50% 100%; }
+.tc-worker-alert { animation: tc-amber-alert 2.4s ease-in-out infinite alternate; }
+
+@keyframes tc-leg { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+@keyframes tc-bob { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
+@keyframes tc-breath { from { transform: scale(1, 1); } to { transform: scale(1, 1.03); } }
+@keyframes tc-look {
+  0%, 76%, 100% { transform: translateX(0); }
+  82% { transform: translateX(-1.6px); }
+  90% { transform: translateX(1.6px); }
+}
+@keyframes tc-amber-alert { from { opacity: 0.6; } to { opacity: 1; } }
+
+/* cosmetic door at the worker's destination */
+.city-scene[data-door="home"] [data-building="home"] .tc-door,
+.city-scene[data-door="studio"] [data-building="studio"] .tc-door,
+.city-scene[data-door="treasury"] [data-building="treasury"] .tc-door,
+.city-scene[data-door="registry"] [data-building="registry"] .tc-door,
+.city-scene[data-door="archive"] [data-building="archive"] .tc-door { transform: scaleX(0.2); }
+
+/* ---------- C. Building states ---------- */
+.tc-win-lit { opacity: 0; transition: opacity 0.4s ease; }
+.tc-bldg[data-lit="true"] .tc-win-lit { opacity: 0.9; }
+.tc-bldg[data-studio="running"] .tc-win-lit { animation: tc-flicker 1.6s ease-in-out calc(var(--wi, 0) * 0.4s) infinite; }
+.tc-bldg[data-studio="running"] .tc-dish { animation: tc-dish 2.4s ease-in-out infinite alternate; }
+.tc-data-dot { opacity: 0; animation: tc-rise 2.2s linear var(--d, 0s) infinite; }
+.tc-amber-pulse { opacity: 0.3; animation: tc-amber 2.4s ease-in-out infinite alternate; }
+.tc-bob { animation: tc-bob-doc 2.2s ease-in-out infinite alternate; }
+.tc-stamp-in { animation: tc-stamp 520ms ease-out both; }
+.tc-stamp-out { opacity: 0; animation: tc-fadeout 450ms ease-in; }
+.tc-orbit { animation: tc-spin 3.2s linear infinite; }
+.tc-beacon-dim { opacity: 0.45; }
+.tc-scan { opacity: 0; animation: tc-scan 1.2s ease-out; }
+.tc-grey { opacity: 0.55; }
+.tc-muted-outline { opacity: 0.6; }
+.tc-boxes-in { animation: tc-slide 600ms ease-out both; }
+
+@keyframes tc-flicker { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.95; } }
+@keyframes tc-dish { from { transform: scaleX(1); } to { transform: scaleX(0.3); } }
+@keyframes tc-rise {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translateY(-16px); opacity: 0; }
+}
+@keyframes tc-amber { from { opacity: 0.15; } to { opacity: 0.5; } }
+@keyframes tc-bob-doc { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+@keyframes tc-stamp {
+  0% { transform: scale(1.8); opacity: 0; }
+  60% { transform: scale(0.92); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes tc-fadeout { from { opacity: 0.8; } to { opacity: 0; } }
+@keyframes tc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes tc-scan { from { transform: scale(0.6); opacity: 0.8; } to { transform: scale(2.4); opacity: 0; } }
+@keyframes tc-slide { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* state tags: dark text on a light halo (AA) */
+.tc-tag {
+  font-size: 12px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #faf6ec;
+  stroke-width: 4px;
+}
+.tc-tag-info { fill: #1f4f7a; }
+.tc-tag-ok { fill: #1d5a38; }
+.tc-tag-warn { fill: #6b3d00; }
+.tc-tag-muted { fill: #45413a; }
+
+/* ---------- D. Interaction ---------- */
+.tc-bldg { cursor: pointer; }
+.tc-bldg .nameplate { opacity: 0.88; transition: opacity 160ms ease; }
+.tc-bldg-body { transition: transform 180ms ease-out; }
+.tc-bldg-shadow { transition: transform 180ms ease-out; }
+.tc-focus-ring { opacity: 0; }
+.tc-bldg:hover .tc-bldg-body,
+.tc-bldg:focus-visible .tc-bldg-body { transform: translateY(-4px); }
+.tc-bldg:hover .tc-bldg-shadow,
+.tc-bldg:focus-visible .tc-bldg-shadow { transform: scale(1.08); }
+.tc-bldg:hover .nameplate,
+.tc-bldg:focus-visible .nameplate,
+.tc-bldg[data-selected="true"] .nameplate { opacity: 1; }
+.tc-bldg:focus-visible .tc-focus-ring { opacity: 1; }
+.tc-bldg:active .tc-bldg-body { transform: translateY(-1px) scale(1.03, 0.95); transition-duration: 80ms; }
+
+.tc-sel-draw { stroke-dasharray: 100; stroke-dashoffset: 0; opacity: 0; animation: tc-draw 650ms ease-out; }
+.tc-sel-march { animation: tc-fadein 250ms ease-out 450ms both, tc-march 40s linear infinite; }
+@keyframes tc-draw {
+  0% { stroke-dashoffset: 100; opacity: 1; }
+  70% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes tc-march { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -96; } }
+
+/* ---------- E. Page load ---------- */
+.tc-bldg-pop { animation: tc-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) calc(var(--i, 0) * 90ms) both; }
+.city-scene .city-toolbar,
+.city-scene .city-status { animation: tc-fadein 400ms ease-out 150ms both; }
+@keyframes tc-pop {
+  from { transform: translateY(8px) scale(0.86); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes tc-fadein { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- status card + dev fixture ---------- */
+.city-status {
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--tc-card, #fff);
+  border: 1px solid var(--tc-line, #d8c9a8);
+  border-radius: 8px;
+}
+.city-status .city-caption { margin: 0; color: #2e2a24; font-weight: 600; }
+.city-status-warn { border-left: 5px solid #c77d12; }
+.city-terms { margin: 0.25rem 0 0; font-size: 0.82rem; color: #5c564a; }
+.city-fixture {
+  margin: 0 0 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 2px dashed #a33327;
+  background: #fff4e5;
+  color: #5a1c14;
+  font-size: 0.85rem;
+  border-radius: 6px;
+}
+
+/* ---------- global motion switch ---------- */
+.city-scene[data-anim="paused"] *,
+.city-scene[data-anim="paused"] *::before,
+.city-scene[data-anim="paused"] *::after { animation-play-state: paused !important; }
+.city-scene[data-anim="off"] *,
+.city-scene[data-anim="off"] *::before,
+.city-scene[data-anim="off"] *::after { animation: none !important; transition-property: opacity !important; }
+@media (prefers-reduced-motion: reduce) {
+  .city-scene *,
+  .city-scene *::before,
+  .city-scene *::after { animation: none !important; transition-property: opacity !important; }
+}

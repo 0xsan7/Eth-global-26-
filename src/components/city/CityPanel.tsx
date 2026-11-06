@@ -1,6 +1,6 @@
 "use client";
 // CityPanel: detail panel for the selected building — BriefMint workflow.
-// Registry → indexed opportunities + owner publication; Home → private intake;
+// Registry → indexed opportunities + owner publication; Planning Desk (home id) → private intake;
 // Release Desk (treasury id) → exact preview + approval; Studio → compilation;
 // Archive → persisted briefs. Geometry and styling unchanged.
 import Link from "next/link";
@@ -105,7 +105,7 @@ function ReleaseBody(p: CityPanelProps) {
 
 function StudioBody(p: CityPanelProps) {
   const { brief } = p;
-  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Creator&apos;s Home first.</p>;
+  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Planning Desk first.</p>;
   const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
   return (
     <div>
@@ -114,8 +114,8 @@ function StudioBody(p: CityPanelProps) {
         {brief.retryEligible ? " · retry eligible" : ""}
       </p>
       <p className="tc-muted">
-        Compilation is funded by promotional credits — no purchase, no bounty payout. Polls the saved record while
-        running; reopening never redispatches.
+        Compilation uses promotional credits. Any advertised budget is unfunded. Status polls the saved
+        record while running; reopening never recompiles.
       </p>
       {brief.error && <p className="error" role="alert">{brief.error.code}: {brief.error.message}</p>}
       {p.runError && <p className="error" role="alert">{p.runError}</p>}
