@@ -232,8 +232,8 @@ export default function HomePage() {
               <span className="console-name">BriefMint</span>
               <span className="console-sub">Tool City · private notes → public opportunity</span>
             </div>
-            <WalletControls />
             <NavLinks />
+            <WalletControls />
           </div>
         }
       >

@@ -58,7 +58,7 @@ export default function IsoBuilding({
   ];
   const door = doorQuad(g, wallH);
   const data = Object.fromEntries(Object.entries(dataState).map(([k, v]) => [`data-${k}`, v]));
-  const nameY = cy + hh + 22;
+  const nameY = Math.min(apex.y, Tt.y - 7) - 42;
 
   return (
     <g

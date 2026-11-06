@@ -84,7 +84,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
               type="button"
               onClick={() => p.onSelect(o)}
               aria-pressed={p.selected?.entityKey === o.entityKey}
-              style={{ all: "unset", cursor: "pointer", width: "100%" }}
+              className="opportunity-row"
             >
               <span className="badge">{o.category}</span>{" "}
               <span className={o.status === "open" ? "badge badge-fresh" : "badge badge-stale"}>{o.status}</span>{" "}

@@ -41,7 +41,6 @@ const DOOR_MS = 900;
 const POP_MS = 420;
 const STAMP_MS = 520;
 const WALK_PX_PER_S = 95;
-const HUD_RIGHT = 400; // px reserved for the console window on wide screens
 const BOUNDS = { minX: -GRID_N * 20 - 40, maxX: GRID_N * 20 + 40, minY: -140, maxY: GRID_N * 20 + 40 };
 
 const TAG_COLORS: Record<BuildingTag["tone"], string> = {
@@ -267,13 +266,13 @@ export class CityEngine {
   private walk: { path: GridPt[]; world: Pt[]; lens: number[]; total: number; start: number; dur: number; to: BuildingId | null } | null = null;
   private stride = 0;
 
-  private constructor(app: Application, host: HTMLElement, onCamera: ((c: CameraState) => void) | null) {
+  private constructor(app: Application, host: HTMLElement, onCamera: ((c: CameraState) => void) | null, private reservedWidth: () => number) {
     this.app = app;
     this.host = host;
     this.onCamera = onCamera;
   }
 
-  static async create(host: HTMLElement, opts: { onCamera?: (c: CameraState) => void } = {}): Promise<CityEngine> {
+  static async create(host: HTMLElement, opts: { onCamera?: (c: CameraState) => void; reservedWidth?: () => number } = {}): Promise<CityEngine> {
     await document.fonts?.load("700 12px 'Space Mono'").catch(() => undefined);
     const app = new Application();
     await app.init({
@@ -284,7 +283,7 @@ export class CityEngine {
       preference: "webgl",
       resolution: Math.min(2, window.devicePixelRatio || 1),
     });
-    const engine = new CityEngine(app, host, opts.onCamera ?? null);
+    const engine = new CityEngine(app, host, opts.onCamera ?? null, opts.reservedWidth ?? (() => 0));
     const canvas = app.canvas as HTMLCanvasElement;
     canvas.style.position = "absolute";
     canvas.style.inset = "0";
@@ -315,7 +314,7 @@ export class CityEngine {
   private viewport() {
     const w = this.host.clientWidth || 800;
     const h = this.host.clientHeight || 600;
-    const reserve = w >= 1000 ? HUD_RIGHT : 0;
+    const reserve = this.reservedWidth();
     return { w, h, reserve };
   }
 
@@ -905,9 +904,9 @@ export class CityEngine {
     this.depth.addChild(root);
 
     const plate = new Container();
-    plate.position.set(cx, cy + hh + 16);
+    plate.position.set(cx, Math.min(apex.y, Tt.y - 7) - 48);
     const plateBg = new Graphics();
-    const plateText = label(def.name.toUpperCase(), 10, "#e9eef2", "700", false);
+    const plateText = label(def.name.toUpperCase(), 14, "#e9eef2", "700", false);
     plate.addChild(plateBg, plateText);
     const tag = new Container();
     tag.position.set(cx, cy + hh + 36);
@@ -943,11 +942,11 @@ export class CityEngine {
   }
 
   private drawPlate(v: BuildingView, selected: boolean) {
-    const w = v.plateText.width + 16;
+    const w = v.plateText.width + 20;
     v.plateBg.clear();
-    v.plateBg.rect(-w / 2 + 2, -8, w, 18).fill({ color: 0x000000, alpha: 0.25 });
+    v.plateBg.rect(-w / 2 + 2, -10, w, 26).fill({ color: 0x000000, alpha: 0.25 });
     v.plateBg
-      .rect(-w / 2, -10, w, 18)
+      .rect(-w / 2, -13, w, 26)
       .fill(selected ? 0xf0a92b : 0x14212b)
       .stroke({ width: 1.5, color: selected ? 0xffd27a : 0x3a5566 });
     v.plateText.style.fill = selected ? "#111a20" : "#e9eef2";

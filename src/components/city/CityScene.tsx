@@ -4,6 +4,7 @@
 // state); no animation or camera callback reads or writes brief state.
 import "./city.css";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { workbenchInset } from "./city-viewport";
 import HudWindow from "@/components/hud/HudWindow";
 import { ArchiveDecor, PlanningDecor, RegistryDecor, ReleaseDecor, StudioDecor, type SceneFx } from "./BuildingDecor";
 import { GroundAmbient, SkyAmbient } from "./CityAmbient";
@@ -125,6 +126,8 @@ export default function CityScene({
   children,
 }: CitySceneProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const workbenchRef = useRef<HTMLDivElement>(null);
+  const [workbenchExpanded, setWorkbenchExpanded] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const hitsRef = useRef<HTMLDivElement | null>(null);
   const fixtureEnabled = useFixtureEnabled();
@@ -158,7 +161,7 @@ export default function CityScene({
     let engine: CityEngine | null = null;
     const onCamera = (c: CameraState) => applyHitTransform(hitsRef.current, c);
     import("./pixi/city-engine")
-      .then(({ CityEngine }) => CityEngine.create(host, { onCamera }))
+      .then(({ CityEngine }) => CityEngine.create(host, { onCamera, reservedWidth: () => workbenchInset(host.getBoundingClientRect(), workbenchRef.current?.getBoundingClientRect() ?? null) }))
       .then((e) => {
         if (cancelled) {
           e.destroy();
@@ -178,6 +181,26 @@ export default function CityScene({
       engineRef.current = null;
     };
   }, []);
+
+  // Follow actual panel geometry, including expansion and stacked mobile layout.
+  useEffect(() => {
+    const host = hostRef.current;
+    const panel = workbenchRef.current;
+    if (!host || !panel) return;
+    let previousInset: number | null = null;
+    const resize = () => {
+      const inset = workbenchInset(host.getBoundingClientRect(), panel.getBoundingClientRect());
+      host.style.setProperty("--map-right-inset", `${inset}px`);
+      // Content height changes on the stacked workspace must not reset map pan/zoom.
+      if (inset !== previousInset) engineRef.current?.fit();
+      previousInset = inset;
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(panel);
+    observer.observe(host);
+    resize();
+    return () => observer.disconnect();
+  }, [engineReady]);
 
   // Push derived state to the renderer. The renderer never writes state back.
   useEffect(() => {
@@ -247,7 +270,90 @@ export default function CityScene({
   ) : null;
 
   return (
-    <div className="game" ref={rootRef} data-anim="on" data-engine={engineReady ? "ready" : "svg"}>
+    <div className="game" data-workbench={workbenchExpanded ? "expanded" : "standard"} ref={rootRef} data-anim="on" data-engine={engineReady ? "ready" : "svg"}>
+      <div className="hud-layer">
+        <div className="hud-col hud-col--right" ref={workbenchRef}>
+          <HudWindow title="Workbench" fill actions={
+            <button type="button" className="workbench-toggle" aria-pressed={workbenchExpanded} onClick={() => setWorkbenchExpanded(v => !v)}>
+              {workbenchExpanded ? "Compact view" : "Expand workspace"}
+            </button>
+          } footer={<><span>Arkiv · Rabdi</span><span>5 buildings</span></>}>
+            {consoleTop}
+            <nav className="building-tabs" aria-label="Brief workflow">
+              {(["home", "studio", "treasury", "registry", "archive"] as BuildingId[]).map((id, index) => {
+                const b = BUILDINGS.find(b => b.id === id)!;
+                const stepNames = ["Plan", "Generate", "Review", "Publish", "Archive"];
+                return <button key={b.id} type="button" className="building-tab" aria-pressed={selected === b.id} title={b.name} onClick={() => onSelect(b.id)}>
+                  {index < 4 && <span className="workflow-step" aria-hidden="true">{index + 1}</span>}
+                  {stepNames[index]}
+                </button>;
+              })}
+            </nav>
+            <div className="console-body">{children}</div>
+          </HudWindow>
+        </div>
+        <div className="hud-col hud-col--left">
+          <HudWindow title="City scan" hint={scan.loading ? "syncing" : scan.error || scan.stale ? "stale" : "live"}>
+            <div className="scan-row">
+              <span className="scan-big">{scan.loading ? "…" : scan.open}</span>
+              <span className="hud-label">open opportunities</span>
+              <span className="hud-label scan-right">{scan.opportunities} indexed</span>
+            </div>
+            <div className="chip-row">
+              {DIM_LABELS.map((d) => (
+                // Fixture previews never get success/live colouring.
+                <span key={d.key} className={`chip chip--${isFixture ? "plain" : d.tone(city)}`}>
+                  <span className="chip-k">{d.label}</span> {d.value(city)}
+                </span>
+              ))}
+              {fixture && <span className="chip chip--danger">fixture</span>}
+            </div>
+          </HudWindow>
+          {fixtureWindow}
+          <div className="hud-col-spacer" />
+          <div className="hud-hint">
+            <span>Drag to pan · Scroll to zoom · Click a building</span>
+            <span className="hud-hint-btns">
+              <button type="button" className="hud-icon-btn" aria-label="Zoom in" onClick={() => engineRef.current?.zoomBy(1.25)} disabled={!engineReady}>
+                +
+              </button>
+              <button type="button" className="hud-icon-btn" aria-label="Zoom out" onClick={() => engineRef.current?.zoomBy(0.8)} disabled={!engineReady}>
+                −
+              </button>
+              <button type="button" className="hud-icon-btn" aria-label="Reset view" onClick={() => engineRef.current?.fit()} disabled={!engineReady}>
+                ⌂
+              </button>
+            </span>
+          </div>
+          <HudWindow
+            title="Next step"
+            className={city.worker.unresolved ? "hud-window--warn" : undefined}
+            persistent={
+              <div className="order-bar">
+                <span className="order-prompt" aria-hidden="true">
+                  ›
+                </span>
+                {!action && <span className="order-text">{idleHint}</span>}
+                {action && (
+                  <button type="button" className="btn btn-primary" disabled={action.busy} onClick={action.run}>
+                    {action.busy ? "Working…" : action.label}
+                  </button>
+                )}
+              </div>
+            }
+          >
+            <p className="order-status" role="status" aria-live="polite">
+              {statusText}
+            </p>
+            {notice}
+            <p className="hud-fine">
+              Compilation uses promotional credits. Any advertised budget is unfunded: BriefMint never holds or moves funds.
+            </p>
+          </HudWindow>
+        </div>
+
+      </div>
+
       <div className="game-world" ref={hostRef}>
         <svg
           className="game-fallback"
@@ -324,82 +430,6 @@ export default function CityScene({
             })}
           </div>
         )}
-      </div>
-
-      <div className="hud-layer">
-        <div className="hud-col hud-col--left">
-          <HudWindow title="City scan" hint={scan.loading ? "syncing" : scan.error || scan.stale ? "stale" : "live"}>
-            <div className="scan-row">
-              <span className="scan-big">{scan.loading ? "…" : scan.open}</span>
-              <span className="hud-label">open opportunities</span>
-              <span className="hud-label scan-right">{scan.opportunities} indexed</span>
-            </div>
-            <div className="chip-row">
-              {DIM_LABELS.map((d) => (
-                // Fixture previews never get success/live colouring.
-                <span key={d.key} className={`chip chip--${isFixture ? "plain" : d.tone(city)}`}>
-                  <span className="chip-k">{d.label}</span> {d.value(city)}
-                </span>
-              ))}
-              {fixture && <span className="chip chip--danger">fixture</span>}
-            </div>
-          </HudWindow>
-          {fixtureWindow}
-          <div className="hud-col-spacer" />
-          <div className="hud-hint">
-            <span>Drag to pan · Scroll to zoom · Click a building</span>
-            <span className="hud-hint-btns">
-              <button type="button" className="hud-icon-btn" aria-label="Zoom in" onClick={() => engineRef.current?.zoomBy(1.25)} disabled={!engineReady}>
-                +
-              </button>
-              <button type="button" className="hud-icon-btn" aria-label="Zoom out" onClick={() => engineRef.current?.zoomBy(0.8)} disabled={!engineReady}>
-                −
-              </button>
-              <button type="button" className="hud-icon-btn" aria-label="Reset view" onClick={() => engineRef.current?.fit()} disabled={!engineReady}>
-                ⌂
-              </button>
-            </span>
-          </div>
-          <HudWindow
-            title="Next step"
-            className={city.worker.unresolved ? "hud-window--warn" : undefined}
-            persistent={
-              <div className="order-bar">
-                <span className="order-prompt" aria-hidden="true">
-                  ›
-                </span>
-                <span className="order-text">{action ? action.label : idleHint}</span>
-                {action && (
-                  <button type="button" className="btn btn-primary" disabled={action.busy} onClick={action.run}>
-                    {action.busy ? "Working…" : "Go"}
-                  </button>
-                )}
-              </div>
-            }
-          >
-            <p className="order-status" role="status" aria-live="polite">
-              {statusText}
-            </p>
-            {notice}
-            <p className="hud-fine">
-              Compilation uses promotional credits. Any advertised budget is unfunded: BriefMint never holds or moves funds.
-            </p>
-          </HudWindow>
-        </div>
-
-        <div className="hud-col hud-col--right">
-          <HudWindow title="BriefMint city" hint="owner console" fill footer={<><span>Arkiv · Rabdi</span><span>5 buildings</span></>}>
-            {consoleTop}
-            <nav className="building-tabs" aria-label="City buildings">
-              {BUILDINGS_BACK_TO_FRONT.map((b) => (
-                <button key={b.id} type="button" className="building-tab" aria-pressed={selected === b.id} onClick={() => onSelect(b.id)}>
-                  {b.name}
-                </button>
-              ))}
-            </nav>
-            <div className="console-body">{children}</div>
-          </HudWindow>
-        </div>
       </div>
 
       <ul className="sr-only">
