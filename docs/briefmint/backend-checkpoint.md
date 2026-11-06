@@ -44,3 +44,24 @@ The HTTP smoke verifies actual compiled route availability, authentication/query
 Run the Vite/Next cookie journey in a browser using [the local integration runbook](local-integration.md), then, only after separate authorization, resolve the 0G 502 and execute harmless 0G plus owner-signed Arkiv lifecycle gates. Record actual evidence and SDK/network compatibility before declaring the full PRD complete. None of these unproven steps can be completed by another backend unit test.
 
 The user still controls account selection and live authorization. No push, merge, deployment or broadcast is part of this checkpoint.
+
+## Part 1 — backend core and guarded live-probe readiness
+
+6 November 2026, IST. Implementation commit: `1ebeeab`, based on clean `3e26a65` on `codex/payment-backend`. This note supersedes earlier descriptions of the city integration as uncommitted/absent; the history above is retained. Overall PRD estimate remains **67%**: this part closes safety/readiness defects without claiming new live or browser evidence.
+
+Confirmed fixes: challenge redemption checks the current signed domain/URI after an origin change; provider credential echoes (including escaped strings/property names) cannot enter evidence/original storage; an explicitly mismatched returned model is rejected; HTTPS/timeout/output limits fail before dispatch when invalid. The real public config route now probes the configured Arkiv reader, with a five-second readiness deadline, instead of permanently reporting false. No frontend/shared DTO, migration or legacy payment code was changed.
+
+The existing one-request smoke now preserves sanitized response identifiers on structured-response failure, reads bounded response bodies once to avoid clone-cancellation stalls, and explicitly reports promotional debit as `not_measured` with credit source `unverified`. [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md) is the current operator command/interpretation contract. The public-only catalog preflight passed at 09:57:30 UTC / 15:27:30 IST: pinned `0gm-1.0-35b-a3b`, TeeML, one provider, 2,558 ms, **zero inference requests**. No key values or populated env file were accessed.
+
+Targeted verification: **67 passed across six BriefMint test files** (`brief-auth-security`, `brief-execution`, `brief-http`, `brief-readiness`, `brief-smoke`, `briefs-contract`); **4 legacy auth/HTTP tests passed**, 14 unrelated legacy cases intentionally skipped by the name filter. Typecheck, ESLint on changed TypeScript files and `git diff --check` passed. All provider/chain behavior in tests is synthetic. Full server/contract/build/browser verification is deferred to Part 3 as requested.
+
+| Acceptance | Part 1 status |
+|---|---|
+| BM-01 | Locally verified challenge/signature, distinct nonce, replay/expiry, concurrent redemption, current domain/URI, chain-purpose policy, session owner, secure cookies and origin checks. Legacy default remains isolated; BriefMint challenge uses 7794095. |
+| BM-02 / BM-03 | Owner intake and strict bounds verified; quota/lease reservation is atomic. Per-wallet allowance counts **new briefs started** in a window; every retry/uncertain attempt counts against global dispatch allowance. No payment entitlement is introduced. |
+| BM-04 / BM-05 | Private-only request contract, weaker/failed/mismatched response rejection, structured/source validation and honest evidence locally verified. **Live acceptance blocked**: no successful private completion or independent signature/content verification. |
+| BM-06 | Concurrent claims, single active local lease, bounded attempts, timeout accounting/late-response rejection and expired-lease recovery locally verified. Provider work may continue remotely after timeout; local lease limits do not prove remote cancellation or exactly-once execution. |
+| BM-07 / BM-08 | Immutable input/original output, revision checks, approval invalidation, canonical allowlist/hash and racing edit/export checks verified. Hostile notes remain private structurally; semantic owner review remains necessary. |
+| BM-13 / BM-16 | Owner-scoped recovery/archive, restart persistence, no regeneration on read, labelled private export and approved public-only export locally verified. Production host/browser recovery remains a later gate. |
+
+Exact 0G blocker: the earlier operator POST returned HTTP 502 / `PROVIDER_UNAVAILABLE` after 1,827 ms, with unknown debit and no preserved upstream identifiers. It has **not** been solved. Catalog availability does not prove private capacity, credential/credit eligibility, output quality or independent verification. Provider-side signature verification is documented by 0G, but the app/probe do not implement its chain/signature/content checks; report unavailable rather than unsupported or verified. A new potentially billable request needs new explicit user authorization. No wallet signature, Arkiv write, deployment or push occurred. **READY FOR PART 2.**
