@@ -1,10 +1,11 @@
 "use client";
 // Registry: real Arkiv opportunities through indexed queries.
 // Failed reads stay distinct from an empty catalogue; a failed refresh never
-// proves withdrawal or expiry. Closed records remain readable until expiry
-// but are excluded from the default open view.
+// proves withdrawal or expiry. Closed records remain readable until expiry.
+// Text search filters client-side after the indexed fetch; category, status
+// and budget presence filter server-side through indexed fields.
 import { useState } from "react";
-import type { BriefCategory, OpportunityStatus, OpportunityView } from "@/lib/shared/briefmint";
+import type { OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 import { filterOpportunities } from "@/lib/shared/briefmint-validation";
 
 interface OpportunityBoardProps {
@@ -16,6 +17,8 @@ interface OpportunityBoardProps {
   onRefresh: () => void;
   selected: OpportunityView | null;
   onSelect: (o: OpportunityView) => void;
+  filters: OpportunityFilters;
+  onFiltersChange: (f: OpportunityFilters) => void;
 }
 
 export function shortKey(key: string): string {
@@ -23,17 +26,11 @@ export function shortKey(key: string): string {
 }
 
 export default function OpportunityBoard(p: OpportunityBoardProps) {
-  const [category, setCategory] = useState<BriefCategory | "all">("all");
-  const [status, setStatus] = useState<OpportunityStatus | "all">("open");
-  const [budget, setBudget] = useState<"all" | "with" | "without">("all");
   const [query, setQuery] = useState("");
+  const f = p.filters;
 
-  const visible = filterOpportunities(p.opportunities, {
-    category: category === "all" ? "all" : category,
-    status: status === "all" ? "all" : status,
-    budgetPresent: budget,
-    query,
-  });
+  const visible = filterOpportunities(p.opportunities, { ...f, query });
+  const setFilter = (patch: Partial<OpportunityFilters>) => p.onFiltersChange({ ...f, ...patch });
 
   return (
     <div>
@@ -43,7 +40,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
         </button>
         <label>
           Category{" "}
-          <select value={category} onChange={(e) => setCategory(e.target.value as BriefCategory | "all")}>
+          <select value={f.category ?? "all"} onChange={(e) => setFilter({ category: e.target.value as OpportunityFilters["category"] })}>
             <option value="all">All</option>
             <option value="writing">Writing</option>
             <option value="design">Design</option>
@@ -51,7 +48,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
         </label>
         <label>
           Status{" "}
-          <select value={status} onChange={(e) => setStatus(e.target.value as OpportunityStatus | "all")}>
+          <select value={f.status ?? "open"} onChange={(e) => setFilter({ status: e.target.value as OpportunityFilters["status"] })}>
             <option value="open">Open</option>
             <option value="closed">Closed</option>
             <option value="all">All</option>
@@ -59,7 +56,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
         </label>
         <label>
           Budget{" "}
-          <select value={budget} onChange={(e) => setBudget(e.target.value as "all" | "with" | "without")}>
+          <select value={f.budget ?? "all"} onChange={(e) => setFilter({ budget: e.target.value as OpportunityFilters["budget"] })}>
             <option value="all">All</option>
             <option value="with">Advertised</option>
             <option value="without">Not advertised</option>
@@ -96,7 +93,7 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
               <span className="tc-muted">{o.summary.slice(0, 140)}</span>
               <br />
               <span className="tc-mono tc-muted">
-                {shortKey(o.entityKey)} · r{o.revision} · {o.budgetCents === null ? "no advertised budget" : `$${(o.budgetCents / 100).toFixed(2)} (unfunded)`} · deadline {o.deadline}
+                {shortKey(o.entityKey)} · r{o.revision} · {o.budgetUsdCents === null ? "no advertised budget (unfunded)" : `$${(o.budgetUsdCents / 100).toFixed(2)} (unfunded)`} · deadline {o.deadline}
               </span>
             </button>
           </li>

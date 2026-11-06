@@ -1,32 +1,39 @@
 "use client";
 // Home: private notes intake + explicit public parameters.
-// Creates an owner-bound private brief via the PROPOSED BriefMint API.
+// Creates an owner-bound private brief via the canonical BriefMint API.
 // Backend 503 renders `unavailable` honestly; fixtures are never live data.
+// Canonical bounds: notes 250 words / 5000 chars / 20 paragraphs; title ≤120
+// chars; summary ≤1000 chars; budget integer cents or null; https contact;
+// deadline future within 7 days.
 import { useState } from "react";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { briefmintApi } from "@/lib/client/briefmint-api";
-import type { BriefCategory, PrivateBrief, PublicParameters } from "@/lib/shared/briefmint";
 import {
-  MAX_BRIEF_CHARS,
-  MAX_BRIEF_SEGMENTS,
-  MAX_BRIEF_WORDS,
+  BRIEF_LIMITS,
+  privateNotesSchema,
+  publicParametersSchema,
+  type BriefView,
+} from "@/lib/shared/briefmint";
+import {
   MAX_SUMMARY_CHARS,
-  MAX_TITLE_BYTES,
+  MAX_TITLE_CHARS,
   countWords,
   splitBriefSegments,
-  validateBriefNotes,
-  validatePublicParameters,
 } from "@/lib/shared/briefmint-validation";
 
 interface BriefIntakeFormProps {
-  onCreated: (brief: PrivateBrief) => void;
+  onCreated: (brief: BriefView) => void;
 }
 
 const DEMO_NOTES = "Community launch notes (fixture — not live).\n\nKeep private details out of the public draft.";
 
+function firstIssue(message: string): string {
+  return message;
+}
+
 export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
   const [notes, setNotes] = useState("");
-  const [category, setCategory] = useState<BriefCategory>("writing");
+  const [category, setCategory] = useState<"writing" | "design">("writing");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [budgetOn, setBudgetOn] = useState(false);
@@ -40,30 +47,27 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
   const words = countWords(notes);
   const chars = notes.trim().length;
   const segments = splitBriefSegments(notes);
-  const notesCheck = validateBriefNotes(notes);
-  const params: PublicParameters = {
+
+  const budgetValue = !budgetOn ? null : budgetCents.trim() === "" ? Number.NaN : Number(budgetCents);
+  const paramsCheck = publicParametersSchema.safeParse({
     category,
     title: title.trim(),
     summary: summary.trim(),
-    budgetCentsPresent: budgetOn,
-    budgetCents: budgetOn ? Number(budgetCents) : null,
-    contactUrl: contactUrl.trim() ? contactUrl.trim() : null,
-    deadline: deadline.trim(),
     language: "en",
-  };
-  const paramsCheck = validatePublicParameters({
-    ...params,
-    budgetCents: budgetOn ? (budgetCents.trim() === "" ? NaN : Number(budgetCents)) : null,
-  } as PublicParameters);
+    budgetUsdCents: budgetValue,
+    deadline: deadline.trim(),
+    contactUrl: contactUrl.trim() ? contactUrl.trim() : null,
+  });
+  const notesCheck = privateNotesSchema.safeParse(notes);
   const tooManySegments =
-    segments.length >= MAX_BRIEF_SEGMENTS &&
-    notes.split(/\n\s*\n/).filter((s) => s.trim()).length > MAX_BRIEF_SEGMENTS;
-  const clientError = !notesCheck.ok
-    ? notesCheck.message
+    segments.length >= BRIEF_LIMITS.maxParagraphs &&
+    notes.split(/\r?\n\s*\r?\n/u).filter((s) => s.trim()).length > BRIEF_LIMITS.maxParagraphs;
+  const clientError = !notesCheck.success
+    ? firstIssue(notesCheck.error.issues[0]?.message ?? "Private notes are invalid.")
     : tooManySegments
-      ? `Notes have more than ${MAX_BRIEF_SEGMENTS} paragraphs.`
-      : !paramsCheck.ok
-        ? paramsCheck.message
+      ? `Notes have more than ${BRIEF_LIMITS.maxParagraphs} paragraphs.`
+      : !paramsCheck.success
+        ? firstIssue(paramsCheck.error.issues[0]?.message ?? "Public parameters are invalid.")
         : null;
 
   const submit = async () => {
@@ -75,7 +79,18 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
     }
     setBusy(true);
     try {
-      const brief = await briefmintApi.createBrief({ notes: notes.trim(), publicParameters: params });
+      const brief = await briefmintApi.createBrief({
+        notes: notes.trim(),
+        publicParameters: {
+          category,
+          title: title.trim(),
+          summary: summary.trim(),
+          language: "en",
+          budgetUsdCents: budgetValue,
+          deadline: deadline.trim(),
+          contactUrl: contactUrl.trim() ? contactUrl.trim() : null,
+        },
+      });
       setNotes("");
       onCreated(brief);
     } catch (e) {
@@ -92,91 +107,76 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
   };
 
   return (
-    <div className="card form-card">
-      <h3>Start a brief</h3>
+    <div className="card">
+      <h3>Private notes intake</h3>
       <p className="tc-muted">
-        Your notes stay private. Only the public fields you approve later can be published.
+        Rough notes stay private to you and the backend. Only approved public fields may be published.
       </p>
-      <fieldset className="form-group form-group-private">
-        <legend><LockIcon /> Private notes</legend>
-        <div className="form-field">
-          <label htmlFor="brief-notes">Notes <span className="hint">Start a new paragraph for each point</span></label>
-          <textarea id="brief-notes" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} placeholder="Goals, audience, deliverables, things to keep private…" />
-        </div>
-        <div className="counts" aria-label="Note limits">
-          <span>{words}/{MAX_BRIEF_WORDS} words</span>
-          <span>{chars}/{MAX_BRIEF_CHARS} characters</span>
-          <span>{segments.length}/{MAX_BRIEF_SEGMENTS} paragraphs</span>
-        </div>
-      </fieldset>
-      <fieldset className="form-group">
-        <legend><GlobeIcon /> Public details</legend>
-        <div className="form-field">
-          <label htmlFor="brief-category">Category</label>
-          <select id="brief-category" value={category} onChange={(e) => setCategory(e.target.value as BriefCategory)} disabled={busy}>
-            <option value="writing">Writing</option>
-            <option value="design">Design</option>
-          </select>
-        </div>
-        <div className="form-field">
-          <label htmlFor="brief-title">Title <span className="hint">Up to {MAX_TITLE_BYTES} bytes</span></label>
-          <input id="brief-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} placeholder="e.g. Launch announcement graphics" />
-        </div>
-        <div className="form-field">
-          <label htmlFor="brief-summary">Summary <span className="hint">Up to {MAX_SUMMARY_CHARS} characters, nothing private</span></label>
-          <textarea id="brief-summary" className="textarea-sm" value={summary} onChange={(e) => setSummary(e.target.value)} disabled={busy} />
-        </div>
-        <div className="form-field">
-          <label className="check">
-            <input type="checkbox" checked={budgetOn} onChange={(e) => setBudgetOn(e.target.checked)} disabled={busy} />
-            <span>Advertise a budget <span className="hint">Unfunded, in USD cents</span></span>
-          </label>
-          {budgetOn && (
-            <input type="text" inputMode="numeric" value={budgetCents} onChange={(e) => setBudgetCents(e.target.value)} disabled={busy} placeholder="e.g. 5000 (= $50.00)" aria-label="Advertised budget in USD cents" />
-          )}
-        </div>
-        <div className="form-field">
-          <label htmlFor="brief-contact">Contact link <span className="hint">Optional, https only</span></label>
-          <input id="brief-contact" type="text" value={contactUrl} onChange={(e) => setContactUrl(e.target.value)} disabled={busy} placeholder="https://…" />
-        </div>
-        <div className="form-field">
-          <label htmlFor="brief-deadline">Deadline <span className="hint">UTC, at most 7 days ahead</span></label>
-          <input id="brief-deadline" type="text" value={deadline} onChange={(e) => setDeadline(e.target.value)} disabled={busy} placeholder="2026-11-13T09:00:00.000Z" />
-        </div>
-      </fieldset>
+      <details className="hud-learn">
+        <summary>Learn more</summary>
+        <p className="tc-muted">
+          Compilation is funded by promotional credits — no purchase, no bounty payout. Advertised budgets
+          are unfunded: BriefMint never holds or moves funds. Source IDs and private details never leave
+          the private brief; the public preview shows exactly what a publication would contain.
+        </p>
+      </details>
+      <div className="form-field">
+        <label htmlFor="brief-notes">Private notes (blank line = new segment)</label>
+        <textarea id="brief-notes" aria-describedby="brief-notes-hint brief-notes-counts" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
+        <p className="hud-hint" id="brief-notes-hint">Blank line starts a new segment. Keep private details out of the public fields below.</p>
+      </div>
+      <div className="counts" id="brief-notes-counts">
+        <span>Words: {words}/{BRIEF_LIMITS.maxWords}</span>
+        <span>Chars: {chars}/{BRIEF_LIMITS.maxChars}</span>
+        <span>Segments: {segments.length}/{BRIEF_LIMITS.maxParagraphs}</span>
+      </div>
+      <div className="form-field">
+        <label htmlFor="brief-category">Task category (public)</label>
+        <select id="brief-category" value={category} onChange={(e) => setCategory(e.target.value as "writing" | "design")} disabled={busy}>
+          <option value="writing">Writing</option>
+          <option value="design">Design</option>
+        </select>
+      </div>
+      <div className="form-field">
+        <label htmlFor="brief-title">Public title (≤ {MAX_TITLE_CHARS} chars)</label>
+        <input id="brief-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="brief-summary">Public summary (≤ {MAX_SUMMARY_CHARS} chars, no private details)</label>
+        <textarea id="brief-summary" value={summary} onChange={(e) => setSummary(e.target.value)} disabled={busy} />
+      </div>
+      <div className="form-field">
+        <label>
+          <input type="checkbox" checked={budgetOn} onChange={(e) => setBudgetOn(e.target.checked)} disabled={busy} />{" "}
+          Advertise a budget (unfunded, USD cents)
+        </label>
+        {budgetOn && (
+          <input type="text" inputMode="numeric" value={budgetCents} onChange={(e) => setBudgetCents(e.target.value)} disabled={busy} placeholder="e.g. 5000 (= $50.00)" aria-label="Advertised budget in USD cents" />
+        )}
+      </div>
+      <div className="form-field">
+        <label htmlFor="brief-contact">Public contact URL (optional https)</label>
+        <input id="brief-contact" type="text" value={contactUrl} onChange={(e) => setContactUrl(e.target.value)} disabled={busy} placeholder="https://…" />
+      </div>
+      <div className="form-field">
+        <label htmlFor="brief-deadline">Opportunity deadline (UTC, max 7 days)</label>
+        <input id="brief-deadline" type="text" value={deadline} onChange={(e) => setDeadline(e.target.value)} disabled={busy} placeholder="2026-11-13T09:00:00.000Z" />
+      </div>
       {clientError && notes.trim() && <p className="error" role="alert">{clientError}</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {unavailable && (
         <p className="notice" role="status">
-          The BriefMint backend is unavailable (503). Nothing was saved and no fixture was substituted.
+          BriefMint backend unavailable (503) — the intake service is not deployed yet. Nothing was saved; no fixture was substituted.
         </p>
       )}
       <div className="btn-row">
         <button type="button" className="btn btn-primary" disabled={busy || !!clientError} onClick={submit}>
           {busy ? "Saving…" : "Save private brief"}
         </button>
-        <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setNotes(DEMO_NOTES)} title="Fixture — never live evidence">
-          Fill demo notes (fixture)
+        <button type="button" className="btn" disabled={busy} onClick={() => setNotes(DEMO_NOTES)} title="Fixture — never live evidence">
+          Load demo notes (fixture)
         </button>
       </div>
     </div>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-
-function GlobeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M2 8h12M8 2c2 2.2 2 9.8 0 12M8 2c-2 2.2-2 9.8 0 12" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 // Archive: owner-authenticated private briefs and saved revisions.
-// Each row links to the private detail page; reopening never dispatches inference.
+// Each row links to the private detail page; reopening never recompiles.
 import Link from "next/link";
 import type { BriefSummary } from "@/lib/shared/briefmint";
 
@@ -9,7 +9,7 @@ export function BriefStatusBadge({ status }: { status: string }) {
 }
 
 export default function BriefList({ briefs }: { briefs: BriefSummary[] }) {
-  if (briefs.length === 0) return <p className="tc-muted">No private briefs yet — save one at the Planning Desk.</p>;
+  if (briefs.length === 0) return <p className="tc-muted">No private briefs yet — save one at the Creator&apos;s Home.</p>;
   return (
     <ul className="job-list">
       {briefs.map((b) => (
@@ -17,6 +17,7 @@ export default function BriefList({ briefs }: { briefs: BriefSummary[] }) {
           <Link href={`/briefs/${b.id}`}>
             <BriefStatusBadge status={b.executionStatus} />{" "}
             <span className="badge">{b.category}</span>{" "}
+            <span className="badge">{b.publicationStatus}</span>{" "}
             <strong>{b.title}</strong>{" "}
             <span className="tc-muted">r{b.draftRevision} · {b.reviewStatus}</span>
           </Link>

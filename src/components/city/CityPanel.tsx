@@ -1,8 +1,8 @@
 "use client";
 // CityPanel: detail panel for the selected building — BriefMint workflow.
-// Registry → indexed opportunities + owner publication; Planning Desk (home id) → private intake;
-// Release Desk (treasury id) → exact preview + approval; Studio → compilation;
-// Archive → persisted briefs. Geometry and styling unchanged.
+// Registry → indexed opportunities + owner publication; Home (Planning Desk id)
+// → private intake; Release Desk (treasury id) → exact preview + approval;
+// Studio → compilation; Archive → persisted briefs. Geometry and styling unchanged.
 import Link from "next/link";
 import BriefEvidence from "@/components/briefs/BriefEvidence";
 import BriefIntakeForm from "@/components/briefs/BriefIntakeForm";
@@ -11,16 +11,14 @@ import OpportunityBoard from "@/components/briefs/OpportunityBoard";
 import OpportunityPublisher from "@/components/briefs/OpportunityPublisher";
 import OpportunityReader from "@/components/briefs/OpportunityReader";
 import ReleaseDesk from "@/components/briefs/ReleaseDesk";
-import type { BriefMintConfig, OpportunityView, PrivateBrief } from "@/lib/shared/briefmint";
+import type { BriefSummary, BriefView, OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 import type { BuildingId } from "./scene-config";
 import { BUILDING_BY_ID } from "./scene-config";
 
 interface CityPanelProps {
   building: BuildingId;
-  briefConfig: BriefMintConfig | null;
-  briefConfigError: string | null;
-  brief: PrivateBrief | null;
-  briefs: Array<{ id: string; title: string; category: string }>;
+  brief: BriefView | null;
+  briefs: BriefSummary[];
   briefsLoading: boolean;
   opportunities: OpportunityView[];
   opportunitiesLoading: boolean;
@@ -28,10 +26,12 @@ interface CityPanelProps {
   opportunitiesStale: boolean;
   lastRefresh: string | null;
   onRefreshOpportunities: () => void;
+  oppFilters: OpportunityFilters;
+  onOppFiltersChange: (f: OpportunityFilters) => void;
   selectedOpportunity: OpportunityView | null;
   onSelectOpportunity: (o: OpportunityView) => void;
-  onBriefCreated: (b: PrivateBrief) => void;
-  onBriefChange: (b: PrivateBrief) => void;
+  onBriefCreated: (b: BriefView) => void;
+  onBriefChange: (b: BriefView) => void;
   onRunBrief: () => void;
   runBusy: boolean;
   runError: string | null;
@@ -65,6 +65,8 @@ function RegistryBody(p: CityPanelProps) {
         onRefresh={p.onRefreshOpportunities}
         selected={p.selectedOpportunity}
         onSelect={p.onSelectOpportunity}
+        filters={p.oppFilters}
+        onFiltersChange={p.onOppFiltersChange}
       />
       <OpportunityPublisher brief={p.brief} onSaved={p.onBriefChange} rpcLabel="Rabdi 7794095" />
       <OpportunityReader />
@@ -83,7 +85,7 @@ function HomeBody(p: CityPanelProps) {
         <span className="tc-mono">{p.brief.id.slice(0, 18)}…</span>
       </p>
       <p className="tc-muted">
-        {p.brief.publicParameters.title} — r{p.brief.draftRevision} · {p.brief.reviewStatus}
+        {p.brief.publicParameters.title} — r{p.brief.draftRevision} · {p.brief.review.status}
       </p>
       <Link className="btn btn-primary" href={`/briefs/${p.brief.id}`}>Open brief</Link>
     </div>
@@ -93,7 +95,7 @@ function HomeBody(p: CityPanelProps) {
 function ReleaseBody(p: CityPanelProps) {
   return (
     <div>
-      <ReleaseDesk brief={p.brief} onSaved={p.onBriefChange} />
+      <ReleaseDesk key={p.brief ? `${p.brief.id}:${p.brief.draftRevision}` : "none"} brief={p.brief} onSaved={p.onBriefChange} />
       {p.brief && (
         <p className="tc-muted">
           <Link href={`/briefs/${p.brief.id}`}>Full brief detail →</Link>
@@ -105,21 +107,14 @@ function ReleaseBody(p: CityPanelProps) {
 
 function StudioBody(p: CityPanelProps) {
   const { brief } = p;
-  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Planning Desk first.</p>;
+  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Creator&apos;s Home first.</p>;
   const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
   return (
     <div>
-      <p>
-        <span className="badge badge-info">{brief.executionStatus}</span> attempts used: {brief.attemptsUsed}
-        {brief.retryEligible ? " · retry eligible" : ""}
-      </p>
-      <p className="tc-muted">
-        Compilation uses promotional credits. Any advertised budget is unfunded. Status polls the saved
-        record while running; reopening never recompiles.
-      </p>
+      <p><span className="badge badge-info">{brief.executionStatus}</span> attempts used: {brief.attemptsUsed}</p>
       {brief.error && <p className="error" role="alert">{brief.error.code}: {brief.error.message}</p>}
       {p.runError && <p className="error" role="alert">{p.runError}</p>}
-      {canStart && (
+      {(canStart || brief.retryEligible) && (
         <button type="button" className="btn btn-primary" disabled={p.runBusy} onClick={p.onRunBrief}>
           {p.runBusy ? "Working…" : brief.executionStatus === "draft" ? "Start compilation" : "Retry compilation"}
         </button>
@@ -142,9 +137,7 @@ function ArchiveBody(p: CityPanelProps) {
       {p.briefsLoading ? (
         <p className="tc-muted">Loading briefs…</p>
       ) : (
-        <BriefList
-          briefs={p.briefs as unknown as Parameters<typeof BriefList>[0]["briefs"]}
-        />
+        <BriefList briefs={p.briefs} />
       )}
     </div>
   );

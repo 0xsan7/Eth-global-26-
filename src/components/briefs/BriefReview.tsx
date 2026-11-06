@@ -1,19 +1,17 @@
 "use client";
-// Structured review: immutable model output stays intact; edits save as a new
-// editable draft revision with optimistic concurrency. Exports use the latest
-// SAVED draft, falling back to saved model output. No fake completions.
+// Structured review: the immutable model result stays intact; edits save as a
+// new editable draft revision (complete candidate replacement with optimistic
+// concurrency). Exports use the latest SAVED draft, falling back to a
+// candidate projected from the saved model output. No fake completions.
 import { useMemo, useState } from "react";
 import { isApiError } from "@/lib/client/briefmint-api";
+import { briefmintApi } from "@/lib/client/briefmint-api";
 import { useSaveDraft } from "@/lib/client/use-briefs";
-import type { ModelBriefResult, PrivateBrief } from "@/lib/shared/briefmint";
+import type { BriefCandidate, BriefView } from "@/lib/shared/briefmint";
 
 interface BriefReviewProps {
-  brief: PrivateBrief;
-  onSaved: (brief: PrivateBrief) => void;
-}
-
-function savedDraft(brief: PrivateBrief): ModelBriefResult | null {
-  return brief.editedDraft ?? brief.immutableModelResult;
+  brief: BriefView;
+  onSaved: (brief: BriefView) => void;
 }
 
 type SectionKey = "deliverables" | "acceptanceCriteria" | "exclusions" | "openQuestions";
@@ -24,38 +22,67 @@ const SECTIONS: Array<{ key: SectionKey; label: string }> = [
   { key: "openQuestions", label: "Open questions" },
 ];
 
-export function briefResultText(brief: PrivateBrief): string {
-  const d = savedDraft(brief);
+/** Candidate projected from the immutable model result (plain strings). */
+function candidateFromModel(brief: BriefView): BriefCandidate | null {
+  const m = brief.immutableModelResult;
+  if (!m) return null;
+  const strings = (key: SectionKey) => m[key].map((i) => i.text);
+  return {
+    parameters: { ...brief.publicParameters },
+    sections: {
+      deliverables: strings("deliverables"),
+      acceptanceCriteria: strings("acceptanceCriteria"),
+      exclusions: strings("exclusions"),
+      openQuestions: strings("openQuestions"),
+    },
+    status: "open",
+  };
+}
+
+function savedCandidate(brief: BriefView): BriefCandidate | null {
+  return brief.editedDraft ?? candidateFromModel(brief);
+}
+
+export function briefResultText(brief: BriefView): string {
+  const d = savedCandidate(brief);
   if (!d) return "";
   const parts: string[] = [];
   for (const s of SECTIONS) {
-    const items = d[s.key].map((i) => `- ${i.text}`).join("\n");
-    if (items) parts.push(`${s.label}:\n${items}`);
+    const items = d.sections[s.key];
+    if (items.length > 0) parts.push(`${s.label}:\n${items.map((t) => `- ${t}`).join("\n")}`);
   }
   return parts.join("\n\n");
 }
 
 export default function BriefReview({ brief, onSaved }: BriefReviewProps) {
-  const base = useMemo(() => savedDraft(brief), [brief]);
-  const [drafts, setDrafts] = useState<Record<string, string[]>>(() => ({
-    deliverables: base?.deliverables.map((i) => i.text) ?? [],
-    acceptanceCriteria: base?.acceptanceCriteria.map((i) => i.text) ?? [],
-    exclusions: base?.exclusions.map((i) => i.text) ?? [],
-    openQuestions: base?.openQuestions.map((i) => i.text) ?? [],
+  const base = useMemo(() => savedCandidate(brief), [brief]);
+  const [texts, setTexts] = useState<Record<SectionKey, string[]>>(() => ({
+    deliverables: base?.sections.deliverables ?? [],
+    acceptanceCriteria: base?.sections.acceptanceCriteria ?? [],
+    exclusions: base?.sections.exclusions ?? [],
+    openQuestions: base?.sections.openQuestions ?? [],
   }));
+  const [title, setTitle] = useState(base?.parameters.title ?? "");
+  const [summary, setSummary] = useState(base?.parameters.summary ?? "");
+  const [status, setStatus] = useState<"open" | "closed">(base?.status ?? "open");
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [audience, setAudience] = useState<"private" | "public">("private");
   const saveDraft = useSaveDraft();
 
   const baseKey = base ? JSON.stringify(base) : "";
   const [seenKey, setSeenKey] = useState(baseKey);
   if (seenKey !== baseKey) {
     setSeenKey(baseKey);
-    setDrafts({
-      deliverables: base?.deliverables.map((i) => i.text) ?? [],
-      acceptanceCriteria: base?.acceptanceCriteria.map((i) => i.text) ?? [],
-      exclusions: base?.exclusions.map((i) => i.text) ?? [],
-      openQuestions: base?.openQuestions.map((i) => i.text) ?? [],
+    setTexts({
+      deliverables: base?.sections.deliverables ?? [],
+      acceptanceCriteria: base?.sections.acceptanceCriteria ?? [],
+      exclusions: base?.sections.exclusions ?? [],
+      openQuestions: base?.sections.openQuestions ?? [],
     });
+    setTitle(base?.parameters.title ?? "");
+    setSummary(base?.parameters.summary ?? "");
+    setStatus(base?.status ?? "open");
   }
 
   const editable = brief.executionStatus === "ready";
@@ -67,19 +94,26 @@ export default function BriefReview({ brief, onSaved }: BriefReviewProps) {
       setError("Nothing compiled to edit yet.");
       return;
     }
-    const idsFor = (key: SectionKey) => base[key].map((i) => i.id);
-    const draft: ModelBriefResult = {
-      deliverables: drafts.deliverables.map((text, n) => ({ id: idsFor("deliverables")[n] ?? `d${n + 1}`, text: text.trim(), sourceRefs: base.deliverables[n]?.sourceRefs ?? [] })),
-      acceptanceCriteria: drafts.acceptanceCriteria.map((text, n) => ({ id: idsFor("acceptanceCriteria")[n] ?? `a${n + 1}`, text: text.trim(), sourceRefs: base.acceptanceCriteria[n]?.sourceRefs ?? [] })),
-      exclusions: drafts.exclusions.map((text, n) => ({ id: idsFor("exclusions")[n] ?? `e${n + 1}`, text: text.trim(), sourceRefs: base.exclusions[n]?.sourceRefs ?? [] })),
-      openQuestions: drafts.openQuestions.map((text, n) => ({ id: idsFor("openQuestions")[n] ?? `q${n + 1}`, text: text.trim(), sourceRefs: base.openQuestions[n]?.sourceRefs ?? [] })),
+    const draft: BriefCandidate = {
+      parameters: {
+        ...base.parameters,
+        title: title.trim(),
+        summary: summary.trim(),
+      },
+      sections: {
+        deliverables: texts.deliverables.map((t) => t.trim()).filter(Boolean),
+        acceptanceCriteria: texts.acceptanceCriteria.map((t) => t.trim()).filter(Boolean),
+        exclusions: texts.exclusions.map((t) => t.trim()).filter(Boolean),
+        openQuestions: texts.openQuestions.map((t) => t.trim()).filter(Boolean),
+      },
+      status,
     };
-    if (draft.deliverables.some((i) => !i.text)) {
-      setError("Deliverables must not contain empty items.");
+    if (draft.sections.deliverables.length === 0) {
+      setError("Deliverables must not be empty.");
       return;
     }
     try {
-      const updated = await saveDraft.mutateAsync({ id: brief.id, expectedRevision: brief.draftRevision, draft });
+      const updated = await saveDraft.mutateAsync({ id: brief.id, req: { expectedRevision: brief.draftRevision, draft } });
       onSaved(updated);
     } catch (e) {
       if (isApiError(e) && e.status === 409) setError("CONFLICT: the brief changed — reload the saved revision before editing.");
@@ -87,56 +121,85 @@ export default function BriefReview({ brief, onSaved }: BriefReviewProps) {
     }
   };
 
-  const download = (filename: string, content: string, mime: string) => {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportTxt = () => {
-    const text = briefResultText(brief);
-    if (!text) {
-      setError("Nothing saved to export yet.");
-      return;
+  const runExport = async (format: "txt" | "json") => {
+    setError(null);
+    setExporting(true);
+    try {
+      const res = await briefmintApi.exportBrief(brief.id, { format, audience });
+      const blob = new Blob([res.content], { type: res.mediaType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(isApiError(e) ? `${e.code}: ${e.message}` : "Export failed.");
+    } finally {
+      setExporting(false);
     }
-    download(`briefmint-${brief.id.slice(0, 8)}.txt`, `PRIVATE BRIEF (owner-only)\n\n${text}\n`, "text/plain;charset=utf-8");
   };
 
-  const exportJson = () => {
-    const d = savedDraft(brief);
-    if (!d) {
-      setError("Nothing saved to export yet.");
-      return;
-    }
-    download(
-      `briefmint-${brief.id.slice(0, 8)}.json`,
-      JSON.stringify({ briefId: brief.id, revision: brief.draftRevision, draft: d, exportedAt: new Date().toISOString() }, null, 2),
-      "application/json",
-    );
-  };
-
-  if (!base) return <p className="tc-muted">No compiled result yet. Start compilation at the AI Studio.</p>;
+  const model = brief.immutableModelResult;
+  if (!model) return <p className="tc-muted">No compiled result yet. Start compilation at the AI Studio.</p>;
 
   return (
     <div>
       <h3>
         Review compiled brief{" "}
-        {brief.editedDraft ? <span className="badge badge-info">edited draft r{brief.draftRevision}</span> : <span className="badge">model output r{brief.draftRevision}</span>}
+        {brief.editedDraft ? (
+          <span className="badge badge-info">edited draft r{brief.draftRevision}</span>
+        ) : (
+          <span className="badge">model output r{brief.draftRevision}</span>
+        )}
       </h3>
       <p className="tc-muted">Model output is immutable; your edits save as a new draft revision. Approval binds the exact saved revision.</p>
+      <h4>Model suggestions (with source references)</h4>
+      {SECTIONS.map((s) => (
+        <div className="review-seg" key={`model-${s.key}`}>
+          <strong>{s.label}</strong>
+          {model[s.key].length === 0 ? (
+            <p className="tc-muted">None.</p>
+          ) : (
+            <ul>
+              {model[s.key].map((item, n) => (
+                <li key={n}>
+                  {item.text}{" "}
+                  <span className="tc-mono tc-muted">
+                    [{item.basis}
+                    {item.sourceIds.length > 0 ? `: ${item.sourceIds.join(", ")}` : ""}]
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+      <h4>Editable draft (revision {brief.draftRevision} → {brief.draftRevision + 1} on save)</h4>
+      <div className="form-field">
+        <label htmlFor="draft-title">Public title</label>
+        <input id="draft-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={pending || !editable} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="draft-summary">Public summary</label>
+        <textarea id="draft-summary" value={summary} onChange={(e) => setSummary(e.target.value)} disabled={pending || !editable} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="draft-status">Candidate status</label>
+        <select id="draft-status" value={status} onChange={(e) => setStatus(e.target.value as "open" | "closed")} disabled={pending || !editable}>
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
       {SECTIONS.map((s) => (
         <div className="review-seg" key={s.key}>
           <strong>{s.label}</strong>
-          {(drafts[s.key] ?? []).map((text, n) => (
+          {(texts[s.key] ?? []).map((text, n) => (
             <textarea
               key={n}
               value={text}
               onChange={(e) =>
-                setDrafts((d) => ({ ...d, [s.key]: d[s.key].map((t, i) => (i === n ? e.target.value : t)) }))
+                setTexts((d) => ({ ...d, [s.key]: d[s.key].map((t, i) => (i === n ? e.target.value : t)) }))
               }
               disabled={pending || !editable}
               aria-label={`${s.label} item ${n + 1}`}
@@ -144,18 +207,27 @@ export default function BriefReview({ brief, onSaved }: BriefReviewProps) {
           ))}
         </div>
       ))}
-      {brief.inferenceEvidence && (
-        <p className="tc-muted">
-          Model {brief.inferenceEvidence.modelId ?? "not reported"} · provider {brief.inferenceEvidence.providerId ?? "not reported"} · request {brief.inferenceEvidence.requestId ?? "not reported"}
-        </p>
-      )}
       {error && <p className="error" role="alert">{error}</p>}
       <div className="btn-row">
         <button type="button" className="btn btn-primary" disabled={pending || !editable} onClick={save}>
           {pending ? "Saving…" : `Save draft (r${brief.draftRevision} → r${brief.draftRevision + 1})`}
         </button>
-        <button type="button" className="btn" onClick={exportTxt}>Export private TXT</button>
-        <button type="button" className="btn" onClick={exportJson}>Export private JSON</button>
+      </div>
+      <h4>Export saved brief</h4>
+      <div className="btn-row">
+        <label>
+          Audience{" "}
+          <select value={audience} onChange={(e) => setAudience(e.target.value as "private" | "public")} disabled={exporting}>
+            <option value="private">Private</option>
+            <option value="public">Public (approved projection only)</option>
+          </select>
+        </label>
+        <button type="button" className="btn" disabled={exporting} onClick={() => runExport("txt")}>
+          {exporting ? "Exporting…" : "Export TXT"}
+        </button>
+        <button type="button" className="btn" disabled={exporting} onClick={() => runExport("json")}>
+          {exporting ? "Exporting…" : "Export JSON"}
+        </button>
       </div>
       {!editable && <p className="tc-muted">Editing is available once compilation is ready. Exports use the saved version.</p>}
     </div>

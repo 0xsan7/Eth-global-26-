@@ -1,6 +1,6 @@
-// Adapter from a persisted PrivateBrief to the city scene target.
+// Adapter from a persisted BriefView to the city scene target.
 // All decisions live in the pure `deriveCityState`; this only resolves positions.
-import type { PrivateBrief } from "@/lib/shared/briefmint";
+import type { BriefView } from "@/lib/shared/briefmint";
 import { cityInputFromBrief, deriveCityState, type CityState } from "./city-state";
 import type { BuildingId } from "./scene-config";
 import { BUILDING_BY_ID, PLAZA } from "./scene-config";
@@ -28,6 +28,6 @@ export function sceneFromCityState(city: CityState): BriefSceneTarget {
   };
 }
 
-export function briefStateToScene(brief: PrivateBrief | null): BriefSceneTarget {
+export function briefStateToScene(brief: BriefView | null): BriefSceneTarget {
   return sceneFromCityState(deriveCityState(cityInputFromBrief(brief)));
 }

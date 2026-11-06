@@ -3,8 +3,8 @@
 // No React, timers, randomness or I/O. Animation code may only READ this output.
 import type {
   BriefFreshness,
+  BriefView,
   ExecutionStatus,
-  PrivateBrief,
   PublicationStatus,
   ReviewStatus,
 } from "@/lib/shared/briefmint";
@@ -62,18 +62,19 @@ export const NO_BRIEF_INPUT: CityStateInput = {
   reopened: false,
 };
 
-export function cityInputFromBrief(brief: PrivateBrief | null, opts: { reopened?: boolean } = {}): CityStateInput {
+export function cityInputFromBrief(brief: BriefView | null, opts: { reopened?: boolean } = {}): CityStateInput {
   if (!brief) return NO_BRIEF_INPUT;
   const pub = brief.publication;
+  const approved = brief.review.status === "approved" && brief.review.approval !== null;
   return {
     briefId: brief.id,
     execution: brief.executionStatus,
-    review: brief.reviewStatus,
-    approvalCurrent: brief.approval !== null && brief.approval.draftRevision === brief.draftRevision,
-    publication: pub.lastObservedStatus,
-    publicationConfirmed: Boolean(pub.entityKey && pub.expiresAtBlock && pub.observedAt),
+    review: brief.review.status,
+    approvalCurrent: approved && brief.review.approval !== null && brief.review.approval.draftRevision === brief.draftRevision,
+    publication: pub.status,
+    publicationConfirmed: Boolean(pub.confirmed?.entityKey && pub.confirmed?.expiresAtBlock && pub.confirmed?.observedAt),
     freshness: pub.freshness,
-    observedAt: pub.observedAt,
+    observedAt: pub.confirmed?.observedAt ?? null,
     reopened: opts.reopened ?? false,
   };
 }
