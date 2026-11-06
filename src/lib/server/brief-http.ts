@@ -41,6 +41,10 @@ export async function handleBrief(action: BriefApiName, request: Request, id?: s
     }
     const runtime = injected ?? getRuntime().briefmint;
     const { address } = runtime.auth.session(request);
+    const expectedOwner = request.headers.get("x-briefmint-owner");
+    if (!expectedOwner || !/^0x[0-9a-fA-F]{40}$/.test(expectedOwner) || expectedOwner.toLowerCase() !== address.toLowerCase()) {
+      throw new ServiceError("SESSION_OWNER_MISMATCH", 409, "The wallet session changed. Sign in with the expected owner wallet.");
+    }
     if (request.method !== "GET") runtime.auth.assertOrigin(request);
     if (id !== undefined) briefIdSchema.parse(id);
     const input = endpoint.request.parse(request.method === "GET" ? params : await body(request));

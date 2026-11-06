@@ -6,9 +6,12 @@
 // payload, revision, and expiry. Never requests a private key; signing
 // happens in the browser wallet. Intent and broadcast identifiers are
 // persisted locally (non-sensitive) before reporting success.
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { assertPreparedIntentMatches, clearPublicationRecovery, readPublicationRecovery, storePublicationRecovery } from "@/lib/client/publication-recovery";
 import { isApiError } from "@/lib/client/briefmint-api";
-import { useReconcilePublication, useRefreshPublication } from "@/lib/client/use-briefs";
+import { useSession } from "@/lib/client/use-session";
+import { useArmPublication, useReconcilePublication, useRefreshPublication } from "@/lib/client/use-briefs";
+import { currentSessionGeneration, isCurrentSessionGeneration } from "@/lib/client/session-generation";
 import {
   arkivBroadcastTransactionHash,
   writeArkivIntent,
@@ -27,8 +30,7 @@ interface OpportunityPublisherProps {
   rpcLabel: string;
 }
 
-type Phase = "idle" | "preparing" | "signing" | "reconciling" | "done" | "error";
-
+type Phase = "idle" | "preparing" | "signing" | "reconciling" | "pending" | "done" | "error";
 type EthereumProvider = {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
 };
@@ -39,15 +41,29 @@ function randomIntentId(): Hex {
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function intentStorageKey(briefId: string): string {
-  return `briefmint.pendingIntent.${briefId}`;
+async function assertWalletReady(intent: Awaited<ReturnType<typeof validatePublicationIntent>>, provider: EthereumProvider): Promise<void> {
+  const [accounts, rawChainId] = await Promise.all([
+    provider.request({ method: "eth_accounts" }),
+    provider.request({ method: "eth_chainId" }),
+  ]);
+  if (!Array.isArray(accounts) || typeof accounts[0] !== "string"
+    || accounts[0].toLowerCase() !== intent.ownerAddress.toLowerCase()) {
+    throw new Error("Connect the project-owner wallet before starting a publication attempt.");
+  }
+  if (typeof rawChainId !== "string" || !/^0x[0-9a-fA-F]+$/.test(rawChainId)
+    || Number(BigInt(rawChainId)) !== intent.chainId) {
+    throw new Error("Switch the wallet to Arkiv Rabdi before starting a publication attempt.");
+  }
 }
 
 export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: OpportunityPublisherProps) {
+  const { address } = useSession();
+  const runInFlight = useRef(false);
   const [accessKey, setAccessKey] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
+  const arm = useArmPublication();
   const reconcile = useReconcilePublication();
   const refresh = useRefreshPublication();
 
@@ -59,88 +75,159 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
   const live = brief.publication.status === "live";
 
   const run = async (operation: "create" | "update" | "close") => {
+    if (runInFlight.current) return;
+    runInFlight.current = true;
     setError(null);
+    setPhase("preparing");
     try {
+      const generation = currentSessionGeneration();
+      if (!address || address.toLowerCase() !== brief.ownerAddress.toLowerCase()) throw new Error("Connect and sign in with the owner wallet first.");
       if (!brief.editedDraft) throw new Error("No saved draft to publish — compile and save first.");
       if (!approved) throw new Error("Only the currently approved revision can be published.");
+      if (pending && pending.state !== "prepared") {
+        throw new Error("This publication attempt is already uncertain or submitted. Reconcile it; do not sign again.");
+      }
+      if (pending && pending.intent.operation !== operation) {
+        throw new Error("Resume the existing prepared publication operation first.");
+      }
       if (!accessKey.trim()) throw new Error("Enter an Arkiv access key to sign and read (a public rate-limit key; never committed).");
       if (typeof window === "undefined" || !(window as unknown as { ethereum?: EthereumProvider }).ethereum) {
         throw new Error("Install or unlock an EVM browser wallet first.");
       }
       const provider = (window as unknown as { ethereum: EthereumProvider }).ethereum;
       setPhase("preparing");
-      const intentId = randomIntentId();
-      const hash = await hashPublicOpportunity(projectPublicOpportunity(brief.editedDraft, brief.draftRevision));
+      const intentId = (pending?.intent.intentId as Hex | undefined) ?? randomIntentId();
+      const reviewedPayload = projectPublicOpportunity(brief.editedDraft, brief.draftRevision);
+      const hash = await hashPublicOpportunity(reviewedPayload);
+      if (hash !== approval?.publicPayloadHash) throw new Error("The saved draft differs from its approval. Review and approve this exact revision again.");
       const { briefmintApi } = await import("@/lib/client/briefmint-api");
       const intent = await briefmintApi.preparePublication(brief.id, {
         intentId,
         expectedRevision: brief.draftRevision,
         publicPayloadHash: hash,
         operation,
+      }, address);
+      if (!isCurrentSessionGeneration(generation)) throw new Error("Wallet account changed during preparation. No signature was requested.");
+      const checkedIntent = await validatePublicationIntent(intent);
+      assertPreparedIntentMatches(checkedIntent, { intentId, operation, ownerAddress: brief.ownerAddress, payload: reviewedPayload, publicPayloadHash: hash });
+      await assertWalletReady(checkedIntent, provider);
+      storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash: null, entityKey: checkedIntent.entityKey as Hex | null });
+      const armed = await arm.mutateAsync({
+        id: brief.id,
+        req: { intentId, transactionHash: null, entityKey: null },
       });
-      await validatePublicationIntent(intent);
-      try {
-        localStorage.setItem(intentStorageKey(brief.id), JSON.stringify({ intentId, operation }));
-      } catch {
-        /* Local persistence is best-effort. */
+      if (isCurrentSessionGeneration(generation)) onSaved(armed.brief);
+      if (!armed.pending || armed.brief.publication.pending?.intent.intentId !== intentId
+        || armed.brief.publication.pending.state !== "unknown") {
+        throw new Error("The server did not confirm the one-time signing arm; no wallet write was started.");
       }
+      if (!isCurrentSessionGeneration(generation)) throw new Error("Wallet account changed after the attempt was armed. It is locked and no signature was requested.");
       setPhase("signing");
       let transactionHash: Hex;
-      let entityKey: Hex;
+      let entityKey: Hex | null;
       try {
-        const receipt = await writeArkivIntent(intent, accessKey.trim(), provider);
+        const receipt = await writeArkivIntent(checkedIntent, accessKey.trim(), provider);
         transactionHash = receipt.transactionHash as Hex;
         entityKey = receipt.entityKey as Hex;
       } catch (e) {
         const uncertain = arkivBroadcastTransactionHash(e);
-        if (!uncertain) throw e;
+        if (!uncertain) {
+          setPhase("pending");
+          setError("The attempt was armed but returned no transaction hash. Its outcome is uncertain; do not sign again.");
+          return;
+        }
         transactionHash = uncertain as Hex;
-        entityKey = (intent.entityKey ?? "") as Hex;
+        entityKey = intent.entityKey as Hex | null;
         setLastTx(transactionHash);
+        try { storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash, entityKey }); } catch { /* Server reconciliation below records the hash. */ }
         setPhase("reconciling");
-        const confirmedBrief = await reconcile.mutateAsync({
+        const result = await reconcile.mutateAsync({
           id: brief.id,
-          req: { intentId, transactionHash, entityKey: entityKey || null },
+          req: { intentId, transactionHash, entityKey },
         });
-        onSaved(confirmedBrief);
+        if (isCurrentSessionGeneration(generation)) onSaved(result.brief);
+        if (result.pending) {
+          setPhase("pending");
+          setError("The transaction is still being confirmed. Its identifiers are saved; do not sign again.");
+          return;
+        }
+        try { clearPublicationRecovery(localStorage, brief.id, intentId); } catch { /* Confirmed server state remains authoritative. */ }
         setPhase("done");
         return;
       }
       setLastTx(transactionHash);
-      try {
-        localStorage.setItem(
-          intentStorageKey(brief.id),
-          JSON.stringify({ intentId, transactionHash, entityKey }),
-        );
-      } catch {
-        /* Local persistence is best-effort. */
-      }
+      try { storePublicationRecovery(localStorage, brief.id, { intentId, operation, transactionHash, entityKey }); } catch { /* Server reconciliation below records the hash. */ }
       setPhase("reconciling");
       // Reconcile against the recorded approved intent; the server reads the
       // chain and confirms owner/payload/revision/expiry before marking live.
-      const confirmedBrief = await reconcile.mutateAsync({
+      const result = await reconcile.mutateAsync({
         id: brief.id,
         req: { intentId, transactionHash, entityKey },
       });
+      if (isCurrentSessionGeneration(generation)) onSaved(result.brief);
+      if (result.pending) {
+        setPhase("pending");
+        setError("The transaction is still being confirmed. Its identifiers are saved; do not sign again.");
+        return;
+      }
       try {
-        localStorage.removeItem(intentStorageKey(brief.id));
+        clearPublicationRecovery(localStorage, brief.id, intentId);
       } catch {
         /* Local persistence is best-effort. */
       }
-      onSaved(confirmedBrief);
       setPhase("done");
     } catch (e) {
       setPhase("error");
       if (isApiError(e)) setError(`${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}`);
       else setError(e instanceof Error ? e.message : "Publication failed.");
+    } finally {
+      runInFlight.current = false;
+    }
+  };
+
+  const recover = async () => {
+    setError(null);
+    const current = brief.publication.pending;
+    if (!current || current.state === "prepared") return;
+    const found = readPublicationRecovery(localStorage, brief.id, current.intent.intentId);
+    const saved = found?.intentId === current.intent.intentId ? found : null;
+    const transactionHash = current.transactionHash ?? saved?.transactionHash ?? null;
+    if (!transactionHash) {
+      setError("No transaction hash is available. The attempt remains locked; do not sign again.");
+      setPhase("pending");
+      return;
+    }
+    setPhase("reconciling");
+    try {
+      const generation = currentSessionGeneration();
+      const result = await reconcile.mutateAsync({
+        id: brief.id,
+        req: {
+          intentId: current.intent.intentId,
+          transactionHash,
+          entityKey: saved?.entityKey ?? current.intent.entityKey,
+        },
+      });
+      if (isCurrentSessionGeneration(generation)) onSaved(result.brief);
+      if (result.pending) {
+        setPhase("pending");
+        setError("The transaction is still unresolved. Keep the saved identifiers and do not sign again.");
+        return;
+      }
+      clearPublicationRecovery(localStorage, brief.id, current.intent.intentId);
+      setPhase("done");
+    } catch (e) {
+      setPhase("pending");
+      setError(isApiError(e) ? `${e.code}: ${e.message}` : "Reconciliation is unavailable; keep the identifiers and do not sign again.");
     }
   };
 
   const doRefresh = async () => {
     setError(null);
     try {
+      const generation = currentSessionGeneration();
       const updated = await refresh.mutateAsync(brief.id);
-      onSaved(updated);
+      if (isCurrentSessionGeneration(generation)) onSaved(updated);
     } catch (e) {
       setError(isApiError(e) ? `${e.code}: ${e.message}` : "Refresh failed.");
     }
@@ -150,8 +237,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
     <section aria-label="Arkiv publication">
       <h3>Owner-signed Arkiv publication</h3>
       <p className="tc-muted">
-        Signing wallet must be the project owner. Network: Arkiv Rabdi ({rpcLabel}). A declined signature restores the
-        prior confirmed state; the approved revision stays available for retry.
+        Signing wallet must be the project owner. Network: Arkiv Rabdi ({rpcLabel}). Once signing is armed, a declined or interrupted signature leaves the attempt locked until its outcome can be resolved.
       </p>
       <div className="form-field">
         <label htmlFor="arkiv-access-key">Arkiv access key (public rate-limit key; never committed)</label>
@@ -167,7 +253,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       <p>
         Status: <span className="badge badge-info">{brief.publication.status}</span>{" "}
         <span className="badge">{brief.publication.freshness}</span>
-        {pending && <span className="tc-muted"> — intent {pending.state}; keep polling, do not resubmit blindly.</span>}
+        {pending && <span className="tc-muted"> — intent {pending.state}; do not sign again while this attempt is unresolved.</span>}
       </p>
       {confirmed && (
         <p className="tc-mono tc-muted">
@@ -177,23 +263,34 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       )}
       {lastTx && <p className="tc-mono tc-muted">Last submitted tx: {lastTx} (reconciled, not assumed)</p>}
       {phase === "reconciling" && <p role="status">Reconciling on-chain entity with the backend…</p>}
+      {phase === "pending" && <p role="status">Publication remains locked until the backend confirms its outcome.</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {phase === "done" && <p className="notice" role="status">Reconciliation finished — see the confirmed status above.</p>}
       <div className="btn-row">
-        {!confirmed && (
-          <button type="button" className="btn btn-primary" disabled={phase === "signing" || phase === "reconciling" || reconcile.isPending} onClick={() => run("create")}>
+        {pending?.state === "prepared" && (
+          <button type="button" className="btn btn-primary" disabled={phase === "preparing" || phase === "signing" || phase === "reconciling" || arm.isPending} onClick={() => run(pending.intent.operation)}>
+            Resume prepared signing attempt
+          </button>
+        )}
+        {!pending && !confirmed && (
+          <button type="button" className="btn btn-primary" disabled={phase === "preparing" || phase === "signing" || phase === "reconciling" || arm.isPending || reconcile.isPending} onClick={() => run("create")}>
             Sign publication (approved revision)
           </button>
         )}
-        {live && (
+        {!pending && live && (
           <>
-            <button type="button" className="btn btn-primary" disabled={phase === "signing" || phase === "reconciling" || reconcile.isPending} onClick={() => run("update")}>
+            <button type="button" className="btn btn-primary" disabled={phase === "preparing" || phase === "signing" || phase === "reconciling" || arm.isPending || reconcile.isPending} onClick={() => run("update")}>
               Sign update (approved revision)
             </button>
-            <button type="button" className="btn btn-danger" disabled={phase === "signing" || phase === "reconciling"} onClick={() => run("close")}>
+            <button type="button" className="btn btn-danger" disabled={phase === "preparing" || phase === "signing" || phase === "reconciling" || arm.isPending || reconcile.isPending} onClick={() => run("close")}>
               Sign closure
             </button>
           </>
+        )}
+        {pending && pending.state !== "prepared" && (
+          <button type="button" className="btn" disabled={phase === "reconciling" || reconcile.isPending} onClick={recover}>
+            Reconcile existing attempt
+          </button>
         )}
         <button type="button" className="btn" disabled={refresh.isPending} onClick={doRefresh}>
           {refresh.isPending ? "Refreshing…" : "Refresh chain observation"}

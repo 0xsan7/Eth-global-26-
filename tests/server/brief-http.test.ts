@@ -44,7 +44,7 @@ async function login(runtime: BriefRuntime, wallet = account) {
 async function call(runtime: BriefRuntime, action: BriefApiName, cookie?: string, data?: unknown, id?: string, suffix = "") {
   const endpoint = briefApi[action];
   return handleBrief(action, new Request(origin + endpoint.path.replace(":id", id ?? "") + suffix, {
-    method: endpoint.method, headers: { ...(cookie ? { Cookie: cookie } : {}), Origin: origin, "Content-Type": "application/json" },
+    method: endpoint.method, headers: { ...(cookie ? { Cookie: cookie, "x-briefmint-owner": runtime.auth.session(new Request(origin, { headers: { Cookie: cookie } })).address } : {}), Origin: origin, "Content-Type": "application/json" },
     ...(endpoint.method !== "GET" ? { body: JSON.stringify(data ?? {}) } : {}),
   }), id, runtime);
 }
@@ -71,6 +71,22 @@ describe("BriefMint API and private lifecycle", () => {
     runtime.config = async () => ({ ...config, unexpectedPrivateField: "PRIVATE CANARY" });
     const rejected = await call(runtime, "config");
     expect(rejected.status).toBe(500); expect(await rejected.text()).not.toContain("PRIVATE CANARY");
+  });
+  it("rejects missing or cross-tab mismatched owner bindings before private reads and writes", async () => {
+    const runtime = setup(); const cookie = await login(runtime);
+    const initial = runtime.briefs.list(account.address, {}).briefs.length;
+    for (const owner of [undefined, other.address, "malformed"]) {
+      for (const action of ["list", "create"] as const) {
+        const response = await handleBrief(action, new Request(origin + "/api/briefs", {
+          method: briefApi[action].method,
+          headers: { Cookie: cookie, Origin: origin, "Content-Type": "application/json", ...(owner ? { "x-briefmint-owner": owner } : {}) },
+          ...(action === "create" ? { body: JSON.stringify({ notes: "must never be stored", publicParameters: parameters }) } : {}),
+        }), undefined, runtime);
+        expect(response.status).toBe(409);
+        expect((await response.json()).error.code).toBe("SESSION_OWNER_MISMATCH");
+      }
+    }
+    expect(runtime.briefs.list(account.address, {}).briefs).toHaveLength(initial);
   });
   it("creates private records and returns identical wrong-owner/missing errors", async () => {
     const runtime = setup(); const cookie = await login(runtime); const otherCookie = await login(runtime, other);

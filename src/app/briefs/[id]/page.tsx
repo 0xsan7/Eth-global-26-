@@ -15,23 +15,25 @@ import ReleaseDesk from "@/components/briefs/ReleaseDesk";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { briefmintApi } from "@/lib/client/briefmint-api";
 import { useBrief, useRefreshPublication } from "@/lib/client/use-briefs";
+import { useSession } from "@/lib/client/use-session";
 
 export default function BriefDetailPage() {
   const params = useParams();
   const raw = (params as Record<string, string | string[]>).id;
   const id = Array.isArray(raw) ? raw[0] : raw;
   const valid = typeof id === "string" && id.length > 0;
-  const briefQ = useBrief(valid ? id : undefined);
+  const sessionQ = useSession();
+  const briefQ = useBrief(valid ? id : undefined, sessionQ.address);
   const refreshPub = useRefreshPublication();
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
   const handleRun = async () => {
-    if (!briefQ.data) return;
+    if (!briefQ.data || !sessionQ.address) return;
     setRunBusy(true);
     setRunError(null);
     try {
-      const result = await briefmintApi.runBrief(briefQ.data.id);
+      const result = await briefmintApi.runBrief(briefQ.data.id, sessionQ.address);
       await briefQ.refetch();
       void result;
     } catch (e) {
@@ -42,7 +44,7 @@ export default function BriefDetailPage() {
   };
 
   const handleRefresh = async () => {
-    if (!briefQ.data) return;
+    if (!briefQ.data || !sessionQ.address) return;
     setRunError(null);
     try {
       await refreshPub.mutateAsync(briefQ.data.id);
@@ -55,6 +57,8 @@ export default function BriefDetailPage() {
   let body: React.ReactNode;
   if (!valid) {
     body = <p className="error" role="alert">BAD_INPUT: invalid brief id.</p>;
+  } else if (!sessionQ.address) {
+    body = <p className="notice">Connect the project-owner wallet and sign in to open this brief.</p>;
   } else if (briefQ.isLoading) {
     body = <p className="tc-muted">Loading brief…</p>;
   } else if (briefQ.error) {
