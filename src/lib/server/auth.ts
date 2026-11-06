@@ -7,6 +7,7 @@ import type { Database } from "./db";
 import { transaction } from "./db";
 import type { ServerEnv } from "./env";
 import { badInput, ServiceError, unavailable } from "./errors";
+import { BRIEFMINT_CHAIN_ID } from "../shared/briefs";
 
 const COOKIE = "tool_city_session";
 export class AuthService {
@@ -15,14 +16,17 @@ export class AuthService {
     const origin = request.headers.get("origin");
     if (!origin || !this.env.allowedOrigins.includes(origin)) throw new ServiceError("FORBIDDEN", 403, "Request origin is not allowed.");
   }
-  challenge(value: unknown) {
+  challenge(value: unknown, purpose: unknown = undefined) {
+    if (purpose !== undefined && purpose !== "briefmint") throw badInput("Unsupported sign-in purpose.");
     if (typeof value !== "string" || !isAddress(value)) throw badInput("A wallet address is required.");
     const address = normalizeAddress(value);
     const challengeId = randomBytes(24).toString("hex");
     const expires = this.now() + 5 * 60_000;
     const issuedAt = new Date(this.now()).toISOString();
     const expiresAt = new Date(expires).toISOString();
-    const message = `${new URL(this.env.appOrigin).host} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to Tool City. This is not a payment authorization.\n\nURI: ${this.env.appOrigin}\nVersion: 1\nChain ID: 1874\nNonce: ${challengeId}\nIssued At: ${issuedAt}\nExpiration Time: ${expiresAt}`;
+    const statement = purpose === "briefmint" ? "Sign in to BriefMint. This is not a payment or publication authorization." : "Sign in to Tool City. This is not a payment authorization.";
+    const chainId = purpose === "briefmint" ? BRIEFMINT_CHAIN_ID : 1874;
+    const message = `${new URL(this.env.appOrigin).host} wants you to sign in with your Ethereum account:\n${address}\n\n${statement}\n\nURI: ${this.env.appOrigin}\nVersion: 1\nChain ID: ${chainId}\nNonce: ${challengeId}\nIssued At: ${issuedAt}\nExpiration Time: ${expiresAt}`;
     transaction(this.db, () => {
       this.pruneExpired();
       const outstanding = this.db.prepare("SELECT COUNT(*) AS count FROM auth_challenges WHERE address=? AND consumed_at IS NULL").get(address) as { count: number };
@@ -36,6 +40,11 @@ export class AuthService {
     if (typeof challengeId !== "string" || !/^[a-f0-9]{48}$/.test(challengeId) || typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature) || signature.length > 4096) throw badInput();
     const row = this.db.prepare("SELECT * FROM auth_challenges WHERE id=?").get(challengeId) as { address: Address; message: string; expires_at: number; consumed_at: number | null } | undefined;
     if (!row || row.consumed_at !== null || row.expires_at <= this.now()) throw new ServiceError("UNAUTHENTICATED", 401, "Challenge is invalid or expired.");
+    // Check the actual SIWE domain and URI fields, not a substring of the signed text.
+    // A challenge persisted before an origin change must not authenticate the new origin.
+    const lines = row.message.split("\n");
+    if (lines[0] !== `${new URL(this.env.appOrigin).host} wants you to sign in with your Ethereum account:`
+      || lines[5] !== `URI: ${this.env.appOrigin}`) throw new ServiceError("UNAUTHENTICATED", 401, "Challenge is invalid or expired.");
     let valid = false;
     try { valid = await verifyMessage({ address: row.address, message: row.message, signature: signature as Hex }); } catch { /* Invalid signatures are authentication failures. */ }
     if (!valid) throw new ServiceError("UNAUTHENTICATED", 401, "Signature is invalid.");

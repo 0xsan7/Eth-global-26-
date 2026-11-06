@@ -3,7 +3,7 @@ import { unavailable } from "./errors";
 
 export type ServerEnv = {
   appOrigin: string; allowedOrigins: string[]; sessionSecret: string;
-  databasePath: string; rpcUrl: string | undefined; inferenceKey: string | undefined;
+  databasePath: string; rpcUrl: string | undefined; arkivAccessKey?: string; inferenceKey: string | undefined;
   inferenceBaseUrl: string; modelId: string | undefined; inferenceTimeoutMs: number;
   paymentConfirmations: number; secureCookies: boolean;
 };
@@ -27,7 +27,8 @@ export function getServerEnv(): ServerEnv {
     if (new URL(inferenceBaseUrl).protocol !== "https:") throw unavailable("Inference requires HTTPS.");
     return { appOrigin, allowedOrigins: [...new Set([appOrigin, ...(process.env.AUTH_ALLOWED_ORIGINS ?? "").split(",").filter(Boolean).map(origin)])],
       sessionSecret, databasePath: process.env.DATABASE_PATH ?? "./data/tool-city.sqlite",
-      rpcUrl: process.env.WHITECHAIN_RPC_URL, inferenceKey: process.env.ZERO_G_API_KEY,
+      rpcUrl: process.env.WHITECHAIN_RPC_URL, arkivAccessKey: process.env.ARKIV_ACCESS_KEY || undefined,
+      inferenceKey: process.env.ZERO_G_API_KEY,
       inferenceBaseUrl, modelId: process.env.ZERO_G_MODEL_ID,
       inferenceTimeoutMs: integer(process.env.INFERENCE_TIMEOUT_MS, 60000, 1000, 180000),
       paymentConfirmations: integer(process.env.PAYMENT_CONFIRMATIONS, 3, 1, 100),
