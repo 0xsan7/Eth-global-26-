@@ -36,3 +36,8 @@ export function validatePublicConfig(value: unknown): PublicConfig {
 export function getPublicConfig(): PublicConfig {
   return validatePublicConfig(structuredClone(manifest));
 }
+
+// Browser-safe access to public network metadata for wallet fallbacks.
+export function getDeploymentManifest(): typeof manifest {
+  return manifest;
+}

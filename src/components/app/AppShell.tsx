@@ -1,9 +1,33 @@
-export function AppShell() {
-  return <main>
-    <p>Tool City · initial development build</p>
-    <h1>One draft. One translation workshop.</h1>
-    <p>A city of wallet-owned workshops for private translation, human review and recoverable paid jobs.</p>
-    <p>The application is being built. Live checkout and translation are not available yet.</p>
-    <button disabled>Workshop not available yet</button>
-  </main>;
+import Link from "next/link";
+import WalletControls from "../wallet/WalletControls";
+
+// App shell: header + nav + wallet controls — Agent B owned.
+export default function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div>
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "1rem",
+          flexWrap: "wrap",
+          padding: "0.75rem 1rem",
+          borderBottom: "1px solid #ddd",
+        }}
+      >
+        <Link href="/" style={{ fontWeight: 700, textDecoration: "none" }}>
+          Tool City
+        </Link>
+        <nav aria-label="Primary" style={{ display: "flex", gap: "0.75rem" }}>
+          <Link href="/">City</Link>
+          <Link href="/jobs">My Jobs</Link>
+          <Link href="/merchant">Merchant</Link>
+        </nav>
+        <div style={{ marginLeft: "auto" }}>
+          <WalletControls />
+        </div>
+      </header>
+      <main style={{ padding: "1rem", maxWidth: "60rem", margin: "0 auto" }}>{children}</main>
+    </div>
+  );
 }

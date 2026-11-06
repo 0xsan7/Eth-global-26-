@@ -58,3 +58,8 @@ export type PublicConfig = {
     tokenAddress: Address };
   terms: CheckoutTerms | null; serviceTermsText: string;
 };
+
+export const APP_NAMESPACE = "tool-city.workshop.v1" as const;
+export const SOURCE_LANG = "en" as const;
+export const TARGET_LANG = "hi" as const;
+export const JOB_TYPE = "text.translate" as const;

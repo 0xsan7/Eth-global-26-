@@ -6,9 +6,9 @@ Built for **ETHGlobal Mumbai 2026** by a two-person team.
 
 ## Status
 
-Backend foundation in development on `codex/payment-backend`. Local contract/server checks and the production build pass. Live sponsor integrations and the teammate's city/Arkiv UI are not complete; this is not a working paid translation demo yet.
+Frontend and backend foundations are integrated on `codex/city-frontend`. Local contract/server/UI checks pass. Live sponsor integrations, deployed checkout values and a real Arkiv listing are still pending; this is not a working paid translation demo yet.
 
-The current browser page and checkout example are explicitly disabled bootstrap shells. The backend fails closed until a real deployment and Arkiv reader are integrated.
+The backend fails closed until a real deployment and Arkiv reader are integrated. The city and job screens render real API state and show labelled fixtures only behind `NEXT_PUBLIC_ENABLE_DEV_FIXTURES`.
 
 ## The idea
 
@@ -60,6 +60,7 @@ Validation commands:
 npm run contracts:compile
 npm run test:contracts
 npm run test:server
+npm run test:ui
 npm run lint
 npm run typecheck
 npm run build
@@ -79,25 +80,32 @@ npm run smoke:local
 
 Local tests use explicit doubles and test tokens; they do not establish official-token settlement, model availability, translation quality or sponsor eligibility. The confirmed-purchase cache does not implement later chain-reorg rollback; wallet authentication currently covers EOA signatures. The backend sees the draft. These limitations and remaining gates are recorded in the handoff.
 
-## Tool City reference UI (`apps/web`)
+## UI, city and Arkiv
 
-`apps/web/` is a self-contained React/Vite front end themed as Tool City. It
-renders the five-site translation district, the workshop departures board, and
-a local English → Hindi job demo (Arkiv listing → Whitechain test-USDT
-checkout → private run → Archive review/export). It makes no network calls and
-keeps all job state in the browser; amounts are labelled test USDT and the
-sample draft is demo data.
+UI routes: `/` (city + workshop discovery), `/jobs` (buyer summaries),
+`/jobs/[jobId]` (status, source-aligned review, edit/save/export, evidence),
+`/merchant` (listing publication + verified settlements + CSV).
 
-Run it with:
+Wallet networks: merchant writes listings on Arkiv Rabdi (chain id 7794095);
+buyers pay on Whitechain (chain id 1874) with the official test USDT
+`0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`. Network config comes from
+`GET /api/config` (public manifest); no private keys or API keys in the UI.
 
-```bash
-npm --prefix apps/web install
-npm run reference:dev
-```
+Demo + fixture flag: `NEXT_PUBLIC_ENABLE_DEV_FIXTURES` gates dev-only
+rendering and must be `false`/absent in production; the server never reads it
+for authorization. Fixtures in `src/lib/shared/fixtures.ts` are labelled
+(`supported: false`, fixture-titled) and are never live evidence - see
+`docs/demo-script.md` for the LIVE-vs-FIXTURE evidence slots.
 
-It serves at `http://127.0.0.1:5173`. The copied Vite config still proxies
-`/api`, `/auth`, `/health`, and the reference WebSocket to port 4100, but the
-Tool City demo does not use that backend.
+Arkiv criterion docs map: `arkiv/schema.md`, `arkiv/friction.md`,
+`arkiv/reach.md`, `arkiv/why-arkiv.md`, `arkiv/how-you-use-arkiv.md`
+(full B track) + `src/lib/arkiv/{schema,read,write}.ts`. City art is original
+SVG/CSS - see `public/city/README.md`.
+
+UI smoke tests (`tests/ui/smoke.test.ts`, `node:test` + `assert`, no new deps)
+compile the tested sources to a temp directory and run `npm run test:ui`.
+Status and next steps live in `docs/frontend-handoff.md`; release checklist
+notes are in `docs/integration-checklist-note.md`.
 
 ## Agent plan and handoff
 
@@ -109,4 +117,4 @@ Tool City demo does not use that backend.
 
 No main promotion until the full readiness checklist passes, including real Arkiv publication, verified Whitechain deployment/official-token purchase, useful private 0G output and complete UI/recovery integration. Deployment addresses and evidence will be added only after actual operations.
 
-Codex assists planning and implementation. This foundation used a GPT-6.1 Sol technical coordinator (high reasoning), GPT-6.1 Terra for contract implementation/testing (high), and GPT-6 Luna for bounded handoff/checklist documentation (medium), with integration and review by the main agent. The teammate's frontend work is separate; no finished city implementation is claimed here.
+This branch combines the backend foundation with the teammate's city, review, merchant and Arkiv UI work. The city is rendered from real normalized listing/job state; no live listing, deployed checkout or private 0G request is claimed until the handoff evidence is filled.
