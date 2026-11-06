@@ -157,6 +157,12 @@ export default function HomePage() {
     } catch (e) {
       if (epoch === briefOperationEpoch.current && isCurrentSessionGeneration(generation)) {
         setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
+        // A failed dispatched attempt is persisted before its error is returned.
+        // Refresh only the brief record so the UI shows the consumed attempt count.
+        try {
+          const current = await briefmintApi.getBrief(id, address);
+          if (epoch === briefOperationEpoch.current && isCurrentSessionGeneration(generation)) setBrief(current);
+        } catch { /* Keep the current view if the recovery read is unavailable. */ }
       }
     } finally {
       if (epoch === briefOperationEpoch.current) setRunBusy(false);

@@ -38,6 +38,7 @@ export default function BriefDetailPage() {
       void result;
     } catch (e) {
       setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
+      try { await briefQ.refetch(); } catch { /* Keep the last saved brief view. */ }
     } finally {
       setRunBusy(false);
     }
