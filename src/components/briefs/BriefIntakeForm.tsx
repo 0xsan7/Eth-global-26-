@@ -129,7 +129,7 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
       <div className="form-field">
         <label htmlFor="brief-notes">Private notes (blank line = new segment)</label>
         <textarea id="brief-notes" aria-describedby="brief-notes-hint brief-notes-counts" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
-        <p className="hud-hint" id="brief-notes-hint">Blank line starts a new segment. Keep private details out of the public fields below.</p>
+        <p className="field-help" id="brief-notes-hint">Blank line starts a new segment. Keep private details out of the public fields below.</p>
       </div>
       <div className="counts" id="brief-notes-counts">
         <span>Words: {words}/{BRIEF_LIMITS.maxWords}</span>

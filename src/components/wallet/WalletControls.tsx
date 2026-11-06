@@ -70,6 +70,7 @@ export default function WalletControls({
             <span className="wallet-dot" aria-hidden="true" />
             {address ? truncateAddress(address) : "—"} <span className="wallet-chain">{chainLabel(chainId)}</span>
           </span>
+          {legacyScreen && <>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -88,6 +89,7 @@ export default function WalletControls({
           >
             {arkivChain.name}
           </button>
+          </>}
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => disconnect()}>
             Disconnect
           </button>

@@ -107,7 +107,7 @@ function ReleaseBody(p: CityPanelProps) {
 
 function StudioBody(p: CityPanelProps) {
   const { brief } = p;
-  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Creator&apos;s Home first.</p>;
+  if (!brief) return <p className="tc-muted">No brief yet — save private notes at the Planning Desk first.</p>;
   const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
   return (
     <div>
