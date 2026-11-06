@@ -9,7 +9,7 @@
 A wallet-connected workspace for community leads: draft with **0G**, review every public field,<br />
 then publish a discoverable, wallet-owned opportunity on **Arkiv** — all inside **Tool City**.
 
-[Explore the workflow](#the-workflow) · [See live evidence](#demonstrated-on-testnet) · [Run locally](#run-locally) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Demo guide](docs/submission/DEMO_GUIDE.md)
+[See the UI](#inside-tool-city) · [Explore the workflow](#the-workflow) · [See live evidence](#demonstrated-on-testnet) · [Run locally](#run-locally) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Demo guide](docs/submission/DEMO_GUIDE.md)
 
 **ETHGlobal Mumbai 2026** &nbsp; / &nbsp; **0G inference** &nbsp; / &nbsp; **Arkiv Rabdi**
 
@@ -25,7 +25,53 @@ BriefMint turns those notes into a structured proposal with deliverables, accept
 
 **The model drafts. The owner decides. The wallet publishes.**
 
+## Inside Tool City
+
+### A city that makes the workflow tangible
+
+Click a building to move between the Planning Desk, AI Studio, Release Desk, Registry Hall and Archive.
+
+<a href="docs/assets/screenshots/tool-city.png"><img src="docs/assets/screenshots/tool-city.png" alt="Actual BriefMint Tool City UI with Planning Desk, AI Studio, Release Desk, Registry Hall and Archive" width="100%" /></a>
+
+<table>
+<tr><th width="50%">Owner workspace</th><th width="50%">Public discovery</th></tr>
+<tr>
+<td><a href="docs/assets/screenshots/my-briefs.png"><img src="docs/assets/screenshots/my-briefs.png" alt="My Briefs archive showing the published demo and the preserved pending R3 brief" width="100%" /></a></td>
+<td><a href="docs/assets/screenshots/public-opportunities.png"><img src="docs/assets/screenshots/public-opportunities.png" alt="Public Opportunities displaying the owner, Arkiv entity, approved deliverables and acceptance criteria" width="100%" /></a></td>
+</tr>
+<tr><td>Reopen saved briefs without generating again. The published demo and unresolved original attempt retain separate identities.</td><td>Filter public records and inspect the approved scope, network owner, revision, status and native expiry.</td></tr>
+</table>
+
+<details>
+<summary><strong>Independent reader UI</strong></summary>
+
+<img src="docs/assets/screenshots/independent-reader.png" alt="Independent Arkiv reader form with empty access-key and entity-key inputs" width="100%" />
+
+The reader queries Arkiv directly. This capture shows the form, not a query result; independent read evidence is recorded [separately](docs/evidence/LIVE_DEMO.md).
+
+</details>
+
+<details>
+<summary><strong>Next visuals: draft review and exact public approval</strong></summary>
+
+<table>
+<tr><th width="50%">Generated draft + owner edits</th><th width="50%">Public preview + approval hash</th></tr>
+<tr>
+<td><img src="docs/assets/draft-review-placeholder.svg" alt="Placeholder for a real saved draft-review screenshot" width="100%" /></td>
+<td><img src="docs/assets/approval-preview-placeholder.svg" alt="Placeholder for a real public-payload approval screenshot" width="100%" /></td>
+</tr>
+</table>
+
+These two slots are explicitly placeholders. Add real captures as `docs/assets/screenshots/draft-review.png` and `docs/assets/screenshots/approval-preview.png`, then replace the two placeholder image paths above. [Screenshot replacement guide →](docs/assets/screenshots/README.md)
+
+</details>
+
+*Actual UI screenshots supplied by the operator on 7 November 2026; click to view full resolution. They show capture-time state. The visible legacy Whitechain header label does not imply BriefMint requires checkout or Whitechain funding.*
+
 ## The workflow
+
+![BriefMint pipeline: private intake, 0G drafting, saved edits, exact approval, owner-signed publication and public discovery](docs/assets/briefmint-pipeline.svg)
+
 
 | Step | What the owner does | What BriefMint guarantees at that boundary |
 |---|---|---|
@@ -96,6 +142,15 @@ The approved projection becomes an owner-signed entity under `tool-city.opportun
 
 ## Architecture
 
+### System and integration map
+
+![BriefMint system map with browser, private backend, 0G inference service, Arkiv Rabdi and independent reader boundaries](docs/assets/briefmint-system-map.svg)
+
+*Architecture illustration, not a live execution trace. [Open full-size map](docs/assets/briefmint-system-map.svg). Owner signatures happen in the browser; the server performs receipt and entity checks.*
+
+<details>
+<summary><strong>Editable architecture graph</strong></summary>
+
 ```mermaid
 flowchart LR
   UI[Owner workspace] --> API[Authenticated Next.js API]
@@ -108,6 +163,26 @@ flowchart LR
   API -->|Receipt and entity readback| A
   P[Independent public reader] -->|Indexed query| A
 ```
+
+</details>
+
+### Approval and publication state map
+
+```mermaid
+flowchart LR
+  D[Private draft] -->|Deliberate generation| G[Saved structured result]
+  G -->|Owner edits| R[New revision]
+  R -->|Review exact public projection| A[Approved revision and hash]
+  A -->|Edit again| R
+  A -->|Prepare public-only intent| P[Publication pending]
+  P -->|Owner broadcasts| H[Hash recorded]
+  H -->|Receipt plus matching entity| L[Published and observed]
+  P -->|Broadcast cannot be determined| U[Unknown attempt stays locked]
+  H -->|Readback unavailable| U
+  U -->|Authoritative reconciliation only| H
+```
+
+*This graph describes the intended guarded workflow, not new live activity. An unknown attempt cannot be unlocked by an empty explorer or nonce zero.*
 
 **Private preparation and public publication use separate data representations.** Notes never flow directly from SQLite to Arkiv. Only the approved public projection is eligible for publishing.
 
