@@ -1,0 +1,58 @@
+{
+  "name": "tool-city",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "workspaces": [
+    "examples/checkout-demo"
+  ],
+  "scripts": {
+    "dev": "next dev",
+    "build": "npm run demo:build && next build && node scripts/prepare-standalone.ts",
+    "start": "node .next/standalone/server.js",
+    "lint": "eslint src tests examples scripts contracts/test hardhat.config.ts vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:server && npm run test:ui",
+    "test:server": "vitest run tests/server",
+    "test:ui": "node scripts/run-ui-smoke.cjs",
+    "test:contracts": "hardhat test nodejs",
+    "smoke:local": "node scripts/smoke-production.ts",
+    "contracts:compile": "hardhat build && node scripts/export-checkout-abi.ts",
+    "contracts:deploy": "hardhat run scripts/deploy-checkout.ts --network whitechainSepolia",
+    "contracts:verify": "hardhat run scripts/verify-deployment.ts --network whitechainSepolia",
+    "demo:dev": "npm run dev --workspace @tool-city/checkout-demo",
+    "demo:build": "npm run build --workspace @tool-city/checkout-demo"
+  },
+  "dependencies": {
+    "@arkiv-network/sdk": "1.0.1",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource/space-mono": "5.3.0",
+    "@openzeppelin/contracts": "5.6.1",
+    "@tanstack/react-query": "5.106.1",
+    "next": "16.4.5",
+    "pixi.js": "8.22.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "0.0.1",
+    "viem": "2.57.16",
+    "wagmi": "3.7.11",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-viem": "5.0.7",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "dotenv": "18.0.9",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.5",
+    "hardhat": "3.21.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}
