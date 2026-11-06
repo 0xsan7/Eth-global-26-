@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDatabase } from "../../src/lib/server/db";
 import { BriefService, getBrief, saveBrief } from "../../src/lib/server/briefs";
 import { BriefPublicationService, type PublicationReader } from "../../src/lib/server/brief-publication";
@@ -47,6 +50,59 @@ async function confirmCreate() {
 }
 
 describe("publication intent and independent reconciliation", () => {
+  it("distinguishes revalidated preparation, unknown broadcast, delayed receipt and reverted evidence", async () => {
+    await service.prepare(owner, id, request());
+    expect(getBrief(db, owner, id).publication.pending?.state).toBe("prepared");
+    // A wallet rejection before submission invokes no reconcile; revalidate the same prepared intent.
+    await service.prepare(owner, id, request());
+    expect((db.prepare("SELECT COUNT(*) AS count FROM brief_publications").get() as { count: number }).count).toBe(1);
+    expect((await service.reconcile(owner, id, reconcile())).brief.publication.pending?.state).toBe("unknown");
+    await expect(service.prepare(owner, id, request())).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+    expect((await service.reconcile(owner, id, reconcile(tx))).brief.publication.pending?.state).toBe("submitted");
+    receipt = { status: "reverted", chainId: 7794095, signer: owner, entityKeys: [], blockNumber: "101" };
+    const failed = await service.reconcile(owner, id, reconcile(tx));
+    expect(failed).toMatchObject({ pending: true, brief: { publication: { status: "pending", confirmed: null, pending: { state: "reverted", transactionHash: tx } } } });
+    receipt = { status: "pending", chainId: 7794095, signer: null, entityKeys: [], blockNumber: null };
+    expect((await service.reconcile(owner, id, reconcile(tx))).brief.publication.pending?.state).toBe("reverted");
+  });
+  it("defaults historical pending state to unknown and refuses a new signing authorization", async () => {
+    await service.prepare(owner, id, request());
+    const raw = getBrief(db, owner, id);
+    const legacy = JSON.parse(JSON.stringify(raw)); delete legacy.publication.pending.state;
+    db.prepare("UPDATE briefs SET view_json=? WHERE id=?").run(JSON.stringify(legacy), id);
+    expect(getBrief(db, owner, id).publication.pending?.state).toBe("unknown");
+    await expect(service.prepare(owner, id, request())).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+    await expect(service.reconcile(owner, id, reconcile())).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+  });
+  it("arms only one wallet attempt when two tabs race the same prepared intent", async () => {
+    await service.prepare(owner, id, request());
+    const results = await Promise.allSettled([service.reconcile(owner, id, reconcile()), service.reconcile(owner, id, reconcile())]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find(result => result.status === "rejected");
+    expect(rejected).toMatchObject({ status: "rejected", reason: { code: "PUBLICATION_CONFLICT" } });
+    expect(getBrief(db, owner, id).publication.pending).toMatchObject({ state: "unknown", transactionHash: null });
+    await expect(service.reconcile(owner, id, reconcile())).rejects.toMatchObject({ code: "PUBLICATION_CONFLICT" });
+  });
+  it("recovers a submitted intent from disk and reconciles its older public revision without replacing newer private edits", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "briefmint-publication-"));
+    const path = join(directory, "state.sqlite"); let disk = openDatabase(path);
+    try {
+      disk.prepare("INSERT INTO briefs(id,owner,view_json,status,created_at) VALUES(?,?,?,?,?)").run(id, owner, JSON.stringify(brief), "ready", time);
+      let publication = new BriefPublicationService(disk, reader, () => new Date(time));
+      const intent = await publication.prepare(owner, id, request());
+      await publication.reconcile(owner, id, reconcile(tx, key));
+      const edits = structuredClone(candidate); edits.parameters.title = "Newer private title";
+      new BriefService(disk, () => Date.parse(time)).saveDraft(owner, id, { expectedRevision: 1, draft: edits });
+      disk.close(); disk = openDatabase(path);
+      publication = new BriefPublicationService(disk, reader, () => new Date(time));
+      expect(getBrief(disk, owner, id).publication.pending).toMatchObject({ transactionHash: tx, state: "submitted" });
+      await expect(publication.reconcile(other, id, reconcile(tx, key))).rejects.toMatchObject({ code: "NOT_FOUND" });
+      receipt = { status: "confirmed", chainId: 7794095, signer: owner, entityKeys: [key], blockNumber: "101" };
+      record = { entityKey: key, ownerAddress: owner, payload: intent.payload, expiresAtBlock: intent.expiresAtBlock, observedAtBlock: "101", observedAt: time };
+      const result = await publication.reconcile(owner, id, reconcile());
+      expect(result.brief).toMatchObject({ draftRevision: 2, editedDraft: { parameters: { title: "Newer private title" } }, review: { status: "unreviewed" }, publication: { status: "live", pending: null, confirmed: { publicRevision: 1 } } });
+    } finally { disk.close(); rmSync(directory, { recursive: true, force: true }); }
+  });
   it("refreshes only known entities and proves later expiry from the current block", async () => {
     reader.get = async () => { throw new Error("must not read"); };
     expect((await service.refresh(owner, id)).publication.status).toBe("unpublished");

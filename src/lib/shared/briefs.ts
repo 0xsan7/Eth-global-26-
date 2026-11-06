@@ -186,6 +186,13 @@ export async function validatePublicationIntent(value: unknown): Promise<Publica
 }
 export const pendingPublicationSchema = z.strictObject({
   intent: publicationIntentSchema, transactionHash: briefIdSchema.nullable(),
+  /** Missing historical state is uncertain, never permission to sign again. */
+  state: z.enum(["prepared", "unknown", "submitted", "reverted"]).default("unknown"),
+}).superRefine((pending, ctx) => {
+  if ((pending.state === "prepared" && pending.transactionHash !== null)
+    || (["submitted", "reverted"].includes(pending.state) && pending.transactionHash === null)) {
+    ctx.addIssue({ code: "custom", message: "Pending outcome and transaction evidence do not agree" });
+  }
 });
 export const publicationSchema = z.strictObject({
   status: z.enum(["unpublished", "pending", "live", "closed", "expired"]),

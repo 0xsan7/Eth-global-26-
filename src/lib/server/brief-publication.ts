@@ -56,7 +56,8 @@ export class BriefPublicationService {
     });
   }
   private async observation(reader: PublicationReader, key: string) {
-    const [raw, block] = await Promise.all([reader.get(key), reader.currentBlock()]);
+    const raw = await reader.get(key);
+    const block = await reader.currentBlock();
     const record = raw === null ? null : opportunityRecordSchema.parse(raw);
     const current = clockSchema.parse(block);
     if (record && BigInt(current.number) < BigInt(record.observedAtBlock)) throw new Error("Inconsistent block observations");
@@ -113,7 +114,8 @@ export class BriefPublicationService {
   private async preparedIntent(owner: string, id: string, request: z.infer<typeof preparePublicationRequestSchema>, requestJson: string) {
     const snapshot = getBrief(this.db, owner, id);
     const row = this.row(request.intentId);
-    if (!row || row.brief_id !== id || row.request_json !== requestJson || row.status !== "prepared" || row.transaction_hash !== null) throw conflict();
+    if (!row || row.brief_id !== id || row.request_json !== requestJson || row.status !== "prepared" || row.transaction_hash !== null
+      || snapshot.publication.pending?.state !== "prepared") throw conflict();
     const [intent, payload] = await Promise.all([
       validatePublicationIntent(JSON.parse(row.intent_json)),
       validatePublicationApproval(snapshot, request.expectedRevision, request.publicPayloadHash),
@@ -226,7 +228,7 @@ export class BriefPublicationService {
       if (JSON.stringify(current) !== JSON.stringify(initial) || current.publication.pending) throw conflict();
       this.db.prepare("INSERT INTO brief_publications (intent_id, brief_id, request_json, intent_json, status, transaction_hash, entity_key) VALUES (?, ?, ?, ?, 'prepared', NULL, NULL)")
         .run(request.intentId, id, requestJson, JSON.stringify(intent));
-      current.publication = { ...current.publication, status: "pending", pending: { intent, transactionHash: null } };
+      current.publication = { ...current.publication, status: "pending", pending: { intent, transactionHash: null, state: "prepared" } };
       saveBrief(this.db, briefViewSchema.parse(current));
     });
     return this.preparedIntent(owner, id, request, requestJson);
@@ -253,11 +255,15 @@ export class BriefPublicationService {
       if (current && (current.status === "confirmed" || current.status === "reverted")) return false;
       if (!current || (current.transaction_hash && request.transactionHash && current.transaction_hash !== request.transactionHash)
         || (current.entity_key && request.entityKey && current.entity_key !== request.entityKey)) throw conflict();
-      this.db.prepare("UPDATE brief_publications SET transaction_hash = COALESCE(transaction_hash, ?), entity_key = COALESCE(entity_key, ?), status = 'pending' WHERE intent_id = ?")
-        .run(request.transactionHash, request.entityKey, request.intentId);
       const brief = getBrief(this.db, owner, id);
       if (!brief.publication.pending || JSON.stringify(brief.publication.pending.intent) !== JSON.stringify(intent)) throw conflict();
+      // Null hints before any known hash arm exactly one wallet attempt. Another tab/reload loses the claim.
+      if (!request.transactionHash && !request.entityKey && !current.transaction_hash
+        && (current.status !== "prepared" || brief.publication.pending.state !== "prepared")) throw conflict();
+      this.db.prepare("UPDATE brief_publications SET transaction_hash = COALESCE(transaction_hash, ?), entity_key = COALESCE(entity_key, ?), status = 'pending' WHERE intent_id = ?")
+        .run(request.transactionHash, request.entityKey, request.intentId);
       brief.publication.pending.transactionHash = current.transaction_hash ?? request.transactionHash;
+      if (brief.publication.pending.state !== "reverted") brief.publication.pending.state = "unknown";
       saveBrief(this.db, brief);
       return true;
     });
@@ -272,11 +278,12 @@ export class BriefPublicationService {
       this.markUnavailable(owner, id, request.intentId); throw e;
     }
     const afterReceipt = this.currentResult(owner, id, request.intentId);
-    if (!afterReceipt.pending || receipt.status === "pending") return afterReceipt;
+    if (!afterReceipt.pending) return afterReceipt;
+    if (receipt.status === "pending") return this.pendingOutcome(owner, id, request.intentId, "submitted");
     if (!sameAddress(receipt.signer, owner)) throw conflict();
     // A signer and a reverted receipt do not bind that transaction to this intent.
     // Keep uncertainty until an adapter can independently prove that binding.
-    if (receipt.status === "reverted") return this.currentResult(owner, id, request.intentId);
+    if (receipt.status === "reverted") return this.pendingOutcome(owner, id, request.intentId, "reverted");
     const target = intent.entityKey ?? row.entity_key ?? (receipt.entityKeys.length === 1 ? receipt.entityKeys[0] : null);
     if (!target || !receipt.entityKeys.includes(target)) throw conflict();
     const observationSnapshot = getBrief(this.db, owner, id).publication;
@@ -303,6 +310,17 @@ export class BriefPublicationService {
       || await hashPublicOpportunity(record.payload) !== intent.publicPayloadHash) throw conflict();
     const evidence = await this.evidence(record, row.transaction_hash, observation.block.number);
     return this.settle(owner, id, request.intentId, "confirmed", evidence, observationSnapshot);
+  }
+  private pendingOutcome(owner: string, id: string, intentId: string, state: "submitted" | "reverted") {
+    return transaction(this.db, () => {
+      const brief = getBrief(this.db, owner, id);
+      if (brief.publication.pending?.intent.intentId === intentId) {
+        // An indexed receipt cannot regress to a not-yet-indexed result from another RPC.
+        if (brief.publication.pending.state !== "reverted") brief.publication.pending.state = state;
+        saveBrief(this.db, brief);
+      }
+      return this.currentResult(owner, id, intentId);
+    });
   }
   private settle(owner: string, id: string, intentId: string, status: "confirmed" | "reverted", evidence: BriefView["publication"]["confirmed"], expectedPublication: BriefView["publication"]) {
     return transaction(this.db, () => {

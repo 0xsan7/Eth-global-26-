@@ -5,7 +5,7 @@ import { canonicalPublicJson, OPPORTUNITY_NAMESPACE, publicOpportunitySchema, ty
 export const BriefmintOpportunitySchema = defineSchema(OPPORTUNITY_NAMESPACE, {
   app: str().indexed(), schemaVersion: u64().indexed(), category: str().indexed(), language: str().indexed(),
   status: str().indexed(), budgetPresent: bool().indexed(), budgetUsdCents: u64().indexed(), deadlineUnixSeconds: u64().indexed(),
-  title: str(), content: bytes(),
+  title: bytes(), content: bytes(),
 });
 
 export function briefmintOpportunityValues(payload: PublicOpportunity) {
@@ -19,7 +19,7 @@ export function briefmintOpportunityValues(payload: PublicOpportunity) {
     budgetPresent: bool(parsed.budgetUsdCents !== null),
     budgetUsdCents: u64(parsed.budgetUsdCents ?? 0),
     deadlineUnixSeconds: u64(Math.floor(Date.parse(parsed.deadline) / 1000)),
-    title: str(parsed.title),
+    title: bytes(new TextEncoder().encode(parsed.title)),
     content: bytes(new TextEncoder().encode(canonicalPublicJson(parsed))),
   };
 }

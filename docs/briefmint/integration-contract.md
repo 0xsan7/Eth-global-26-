@@ -1,6 +1,8 @@
-# BriefMint implementation contract — v1.1
+# BriefMint implementation contract — v1.2
 
 Authority: the user-approved `BriefMint-PRD.md` and `BriefMint-Mind-Map.opml` in the parent `Eth Global` directory, read completely for this foundation. They supersede the old translation product plan for BriefMint. Legacy translation/payment behavior remains intact. This document freezes the locally implemented contract and explicitly separates it from unproven live inference, chain, browser-journey and deployment evidence.
+
+Part 2 additive contract note: `publication.pending.state` is now `prepared|unknown|submitted|reverted`; historical missing values parse as `unknown`. The current handoff is [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md). Before the one wallet attempt, B revalidates the same intent with `prepare`, records public identifiers and arms uncertainty with null-hint reconciliation. Reloaded/unknown/submitted/reverted state cannot authorize another signature. Reverted receipts stay conservatively locked because the DTO cannot prove that exact intent was the failed call; there is no safe cancellation/replacement endpoint. No request path or canonical public projection/hash changed. Pre-live unindexed Arkiv `title` storage changed from SDK `str` (128 UTF-8 bytes) to `bytes`, supporting the existing 120-character DTO; legacy entities with `str` titles would need a compatibility/version strategy. No old-schema live record has been evidenced. List observations use the SDK query block; entity GET reports an upper-bound block observed after the read. Separate paginated queries are not an atomic snapshot. The standalone [reader](../../scripts/briefmint-arkiv-reader.ts) works without API/session/SQLite; only its help and offline double tests have been run in this part.
 
 ## Foundation and inspected state
 

@@ -4,7 +4,7 @@ import {
   assertBriefDeadline, arkivTransactionSchema, briefApi, briefCandidateSchema, briefmintConfigSchema,
   BRIEF_LIMITS, BRIEF_KIND, BRIEFMINT_CHAIN_ID, OPPORTUNITY_NAMESPACE,
   canonicalPublicJson, createBriefRequestSchema, hashPublicOpportunity,
-  projectPublicOpportunity, publicationIntentSchema, publicationSchema,
+  projectPublicOpportunity, publicationIntentSchema, publicationSchema, pendingPublicationSchema,
   splitBriefNotes, validateBriefApproval, validateModelResult, validatePublicationApproval, validatePublicationIntent,
   type BriefCandidate, type BriefView,
 } from "../../src/lib/shared/briefs";
@@ -132,9 +132,12 @@ describe("canonical approval and public isolation", () => {
       ownerAddress: owner, entityKey: null, basePayloadHash: null, payload, publicPayloadHash: hash,
       expiresAtBlock: "9999", createdAt: new Date(now).toISOString() });
     await expect(validatePublicationIntent(intent)).resolves.toEqual(intent);
+    expect(pendingPublicationSchema.parse({ intent, transactionHash: null }).state).toBe("unknown");
+    expect(() => pendingPublicationSchema.parse({ intent, transactionHash: id, state: "prepared" })).toThrow();
+    expect(() => pendingPublicationSchema.parse({ intent, transactionHash: null, state: "submitted" })).toThrow();
     await expect(validatePublicationIntent({ ...intent, publicPayloadHash: id })).rejects.toMatchObject({ code: "PAYLOAD_MISMATCH" });
     const brief = ready(); brief.draftRevision = 2; brief.editedDraft!.parameters.title = "New draft";
-    brief.publication = { status: "pending", freshness: "unavailable", confirmed: null, pending: { intent, transactionHash: id } };
+    brief.publication = { status: "pending", freshness: "unavailable", confirmed: null, pending: { intent, transactionHash: id, state: "unknown" } };
     expect(briefApi.get.response.parse({ ok: true, data: brief })).toMatchObject({ data: { draftRevision: 2, publication: { pending: { intent: { payload: { revision: 1 } } } } } });
     expect(() => publicationIntentSchema.parse({ ...intent, operation: "update" })).toThrow();
     expect(() => publicationIntentSchema.parse({ ...intent, operation: "close" })).toThrow();
