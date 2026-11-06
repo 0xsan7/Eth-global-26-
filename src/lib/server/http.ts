@@ -8,6 +8,7 @@ import { listSettlements, settlementCsv } from "./settlements";
 import { getPublicConfig } from "../shared/deployment";
 import { reconcileCheckoutTerms } from "./payment";
 import { readBoundedText } from "./bounded-body";
+import { briefmintAuthChallengeQuerySchema } from "../shared/briefs";
 
 function json<T>(data: T, status = 200, headers?: HeadersInit) { return Response.json({ ok: true, data } satisfies ApiResult<T>, { status, headers: { "Cache-Control": "no-store", ...headers } }); }
 async function body(request: Request) {
@@ -35,7 +36,12 @@ export async function handle(action: Action, request: Request, id?: string): Pro
     const runtime = getRuntime();
     const { auth, jobs, db, config } = runtime;
     if (request.method !== "GET") auth.assertOrigin(request);
-    if (action === "challenge") return json(auth.challenge(new URL(request.url).searchParams.get("address")));
+    if (action === "challenge") {
+      const query = new URL(request.url).searchParams;
+      if (query.getAll("purpose").length > 1 || query.getAll("address").length > 1) throw badInput();
+      if (query.has("purpose") && !briefmintAuthChallengeQuerySchema.safeParse(Object.fromEntries(query)).success) throw badInput();
+      return json(auth.challenge(query.get("address"), query.get("purpose") ?? undefined));
+    }
     if (action === "verifyAuth") { const data = await body(request); const result = await auth.verify(data.challengeId, data.signature); return json(result.session, 200, { "Set-Cookie": result.cookie }); }
     if (action === "session") return json(auth.session(request));
     if (action === "logout") { await body(request); return json({ loggedOut: true }, 200, { "Set-Cookie": auth.logout(request) }); }

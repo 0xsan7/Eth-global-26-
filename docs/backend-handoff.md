@@ -1,5 +1,24 @@
 # Backend handoff
 
+## BriefMint durable backend checkpoint — 6 November 2026
+
+Resumed and preserved the uncommitted implementation on `codex/payment-backend` from committed foundation `5674d82`. Existing work supplied migration 002, private lifecycle services, quota/runner/compiler, publication service, auth purpose selection, draft handoff and guarded provider smoke. This continuation completed runtime/HTTP routing, migration 003 evidence/identity hardening, original-response persistence, standalone migration packaging, strict auth queries, security fixes, regression tests and the [Agent B handoff](briefmint/agent-b-handoff.md).
+
+All ten shared API operations are installed: config; private list/create/get; run; draft save; approve; publication prepare/reconcile; export. The real compiler is installed but requires operator configuration and explicit finite quota; the production Arkiv reader is deliberately absent pending B's adapter. Neither dependency is faked. Legacy translation/payment tables, immutable quote trigger, payment checks and disabled checkout configuration are preserved. `apps/web` and teammate files are unchanged.
+
+Actual final validation:
+
+- `npm run test:server`: **74 tests passed** across six files (33 pre-existing foundation/legacy tests, 41 new execution/HTTP/publication tests).
+- `npm run test:contracts`: **5 tests passed**, local Hardhat execution, no deployment.
+- `npm run lint`, `npm run typecheck`, `npm run build`: passed. Build lists every BriefMint route and copies SQL migrations into standalone runtime. The existing checkout-example Vite build emits a nonfatal `use client` directive warning.
+- `npm run smoke:local`: passed against the real standalone server and temporary SQLite: legacy auth/list/checkout denial; BriefMint chain/query policy, safe readiness, private create/list/get/export and unavailable compilation with zero attempts consumed. No external integration called.
+- Initial local smoke was blocked by sandbox loopback `EPERM`; initial Solidity run timed out acquiring the compiler-cache mutex. Both were rerun with approved local runtime/cache access and passed. The operator-only authenticated provider smoke was **not run**.
+- `git diff --check`: passed before commit; intended files reviewed, no real environment/credentials staged.
+
+Publication safety limits are deliberate and visible: unknown/reverted transactions remain pending until exact intent binding can be proven; no cancellation/replacement endpoint; external changes block automatic overwrite pending explicit resolution; no expiry extension or reopening closed records. New prepare requires current approval; old legitimately broadcast intents may still reconcile after edits. Settled/submitted/uncertain intents cannot be prepared for signing again. Last confirmed state survives uncertain updates/RPC failures. Original provider bytes/evidence are retained privately and immutable after success, but independent signature verification remains unavailable.
+
+Remaining live work: operator-funded model/credit/latency validation, independent response verification, B's real neutral Arkiv reader/browser writer/indexed filters, user-selected existing publisher account, actual chain lifecycle/expiry, connected city/session/account-switch tests, independent public reader and persistent HTTPS deployment/demo evidence. No credentials, paid inference, chain writes, contract deployment, push or merge performed. [Detailed completion estimate and next actions](briefmint/backend-checkpoint.md).
+
 ## BriefMint foundation — 6 November 2026
 
 The user-approved BriefMint PRD now governs the new product. The sections below this update describe the preserved **legacy translation backend**, not BriefMint requirements. No Whitechain checkout/funding is required for BriefMint.
