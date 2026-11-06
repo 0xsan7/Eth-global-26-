@@ -1,86 +1,99 @@
 // BriefMint UI smoke checks — pure, dependency-light contract tests.
-// Covers: notes/params validation, canonical payload hash stability, approval
-// invalidation on edit, public allowlist (no private fields), opportunity
+// Covers: canonical notes/params validation, canonical payload hash stability,
+// revision-bound approval, public allowlist (no private fields), opportunity
 // text filtering, and the BriefMint city mapper. No network, no wallet.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { OpportunityView, PrivateBrief, PublicParameters } from "../../src/lib/shared/briefmint";
 import {
-  assertPublicPayloadClean,
+  BRIEF_LIMITS,
+  canonicalPublicJson,
+  hashPublicOpportunity,
+  privateNotesSchema,
+  projectPublicOpportunity,
+  publicParametersSchema,
+  splitBriefNotes,
+  toOpportunityView,
+  validateBriefApproval,
+  type BriefCandidate,
+  type BriefView,
+  type OpportunityRecord,
+  type OpportunityView,
+  type PublicOpportunity,
+} from "../../src/lib/shared/briefmint";
+import {
   briefSegmentIds,
-  canonicalizePublicPayload,
   countWords,
   filterOpportunities,
-  hashPublicPayload,
-  isApprovalCurrent,
-  projectPublicPayload,
+  MAX_SUMMARY_CHARS,
+  MAX_TITLE_CHARS,
   splitBriefSegments,
-  validateBriefNotes,
-  validatePublicParameters,
-  MAX_BRIEF_CHARS,
-  MAX_BRIEF_SEGMENTS,
-  MAX_BRIEF_WORDS,
 } from "../../src/lib/shared/briefmint-validation";
 import { briefStateToScene } from "../../src/components/city/brief-state-to-scene";
 import { BUILDING_BY_ID } from "../../src/components/city/scene-config";
 
-const params = (over: Partial<PublicParameters> = {}): PublicParameters => ({
-  category: "writing",
+const OWNER = "0x1111111111111111111111111111111111111111";
+const ID = `0x${"a1".repeat(32)}`;
+const NOW = () => new Date().toISOString();
+
+const params = (over: Record<string, unknown> = {}) => ({
+  category: "writing" as const,
   title: "Launch graphics",
   summary: "Short launch explainer for the community.",
-  budgetCentsPresent: false,
-  budgetCents: null,
-  contactUrl: null,
+  language: "en" as const,
+  budgetUsdCents: null as number | null,
   deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-  language: "en",
+  contactUrl: null as string | null,
   ...over,
 });
 
-const brief = (over: Partial<PrivateBrief> = {}): PrivateBrief => ({
-  id: "brief-test-1",
-  ownerAddress: "0x1111111111111111111111111111111111111111",
+const candidate = (over: Partial<BriefCandidate> = {}): BriefCandidate => ({
+  parameters: params(),
+  sections: {
+    deliverables: ["Launch post draft"],
+    acceptanceCriteria: ["Mentions date and scope"],
+    exclusions: [],
+    openQuestions: ["Which channels?"],
+  },
+  status: "open" as const,
+  ...over,
+});
+
+const brief = (over: Record<string, unknown> = {}): BriefView => ({
+  schemaVersion: 1 as const,
+  kind: "brief.compile.v1" as const,
+  id: ID,
+  ownerAddress: OWNER,
   inputSegments: [{ id: "seg_001", text: "Ship the launch post by Friday." }],
   publicParameters: params(),
-  executionStatus: "ready",
-  reviewStatus: "unreviewed",
+  executionStatus: "ready" as const,
   attemptsUsed: 1,
   retryEligible: false,
   immutableModelResult: {
-    deliverables: [{ id: "d1", text: "Launch post draft", sourceRefs: ["seg_001"] }],
-    acceptanceCriteria: [{ id: "a1", text: "Mentions date and scope", sourceRefs: ["seg_001"] }],
+    deliverables: [{ text: "Launch post draft", sourceIds: ["seg_001"], basis: "provided" as const }],
+    acceptanceCriteria: [{ text: "Mentions date and scope", sourceIds: ["seg_001"], basis: "provided" as const }],
     exclusions: [],
-    openQuestions: [{ id: "q1", text: "Which channels?", sourceRefs: [] }],
+    openQuestions: [{ text: "Which channels?", sourceIds: [], basis: "suggested" as const }],
   },
   editedDraft: null,
   draftRevision: 1,
-  approval: null,
-  publication: {
-    briefId: "brief-test-1",
-    entityKey: null,
-    publicRevision: null,
-    pendingTxHash: null,
-    lastConfirmedTxHash: null,
-    observedPayloadHash: null,
-    expiresAtBlock: null,
-    lastObservedStatus: "unpublished",
-    observedAt: null,
-    freshness: "unavailable",
-  },
-  inferenceEvidence: null,
+  evidence: null,
   error: null,
+  review: { status: "unreviewed" as const, approval: null },
+  publication: { status: "unpublished" as const, freshness: "unavailable" as const, confirmed: null, pending: null },
   createdAt: "2026-11-06T00:00:00.000Z",
   updatedAt: "2026-11-06T00:00:00.000Z",
   ...over,
-});
+} as BriefView);
 
 test("notes bounds: empty rejected, 250 words ok, 251 rejected", () => {
-  assert.equal(validateBriefNotes("   ").ok, false);
+  assert.equal(privateNotesSchema.safeParse("   ").success, false);
   const words = Array.from({ length: 250 }, (_, i) => `w${i}`).join(" ");
-  assert.deepEqual(validateBriefNotes(words), { ok: true });
-  assert.equal(validateBriefNotes(`${words} extra`).ok, false);
-  assert.equal(validateBriefNotes("a".repeat(MAX_BRIEF_CHARS + 1)).ok, false);
-  assert.equal(MAX_BRIEF_WORDS, 250);
-  assert.equal(MAX_BRIEF_SEGMENTS, 20);
+  assert.equal(privateNotesSchema.safeParse(words).success, true);
+  assert.equal(privateNotesSchema.safeParse(`${words} extra`).success, false);
+  assert.equal(privateNotesSchema.safeParse("a".repeat(BRIEF_LIMITS.maxChars + 1)).success, false);
+  assert.equal(BRIEF_LIMITS.maxWords, 250);
+  assert.equal(BRIEF_LIMITS.maxParagraphs, 20);
+  assert.deepEqual(splitBriefNotes("a\n\nb").map((s) => s.id), ["seg_001", "seg_002"]);
 });
 
 test("segments split on blank paragraphs with stable seg_NNN ids", () => {
@@ -89,66 +102,70 @@ test("segments split on blank paragraphs with stable seg_NNN ids", () => {
   assert.equal(countWords("  hello   world\n"), 2);
 });
 
-test("public params reject bad category/budget/contact/deadline", () => {
-  assert.deepEqual(validatePublicParameters(params()), { ok: true });
-  assert.equal(validatePublicParameters(params({ category: "video" as never })).ok, false);
-  assert.equal(validatePublicParameters(params({ budgetCentsPresent: true, budgetCents: 1.5 })).ok, false);
-  assert.equal(validatePublicParameters(params({ contactUrl: "http://x.example" })).ok, false);
-  assert.equal(validatePublicParameters(params({ contactUrl: "https://example.org/apply" })).ok, true);
-  assert.equal(validatePublicParameters(params({ deadline: new Date(Date.now() - 1000).toISOString() })).ok, false);
-  assert.equal(validatePublicParameters(params({ deadline: new Date(Date.now() + 30 * 24 * 3600_000).toISOString() })).ok, false);
+test("public params reject bad category/budget/contact/deadline", async () => {
+  assert.equal(publicParametersSchema.safeParse(params()).success, true);
+  assert.equal(publicParametersSchema.safeParse(params({ category: "video" })).success, false);
+  assert.equal(publicParametersSchema.safeParse(params({ budgetUsdCents: 1.5 })).success, false);
+  assert.equal(publicParametersSchema.safeParse(params({ contactUrl: "http://x.example" })).success, false);
+  assert.equal(publicParametersSchema.safeParse(params({ contactUrl: "https://example.org/apply" })).success, true);
+  assert.equal(publicParametersSchema.safeParse(params({ title: "x".repeat(MAX_TITLE_CHARS + 1) })).success, false);
+  assert.equal(publicParametersSchema.safeParse(params({ summary: "x".repeat(MAX_SUMMARY_CHARS + 1) })).success, false);
+  assert.equal(MAX_TITLE_CHARS, 120);
+  assert.equal(MAX_SUMMARY_CHARS, 1000);
+  // Temporal deadline rule lives in assertBriefDeadline (create/save/approve/prepare), not the shape schema.
+  const { assertBriefDeadline } = await import("../../src/lib/shared/briefmint");
+  const now = Date.now();
+  assert.doesNotThrow(() => assertBriefDeadline(new Date(now + 3600_000).toISOString(), now));
+  assert.throws(() => assertBriefDeadline(new Date(now - 1000).toISOString(), now), /Deadline/);
+  assert.throws(() => assertBriefDeadline(new Date(now + 30 * 24 * 3600_000).toISOString(), now), /Deadline/);
 });
 
-test("canonical payload hash is stable and approval invalidates on edit", () => {
+test("canonical payload hash is stable and approval binds the revision", async () => {
   const b = brief();
-  const p1 = projectPublicPayload(b);
-  assert.equal(canonicalizePublicPayload(p1), canonicalizePublicPayload({ ...p1 }));
-  const h1 = hashPublicPayload(p1);
-  assert.match(h1, /^0x[0-9a-fA-F]{64}$/);
-  const approved: PrivateBrief = {
-    ...b,
-    reviewStatus: "approved",
-    approval: {
-      briefId: b.id,
-      draftRevision: 1,
-      canonicalPublicPayload: p1,
-      publicPayloadHash: h1,
-      approvedBy: b.ownerAddress,
-      approvedAt: new Date().toISOString(),
-    },
-  };
-  assert.equal(isApprovalCurrent(approved), true);
-  // Any public-content edit bumps the revision and invalidates approval.
-  const edited: PrivateBrief = {
-    ...approved,
+  assert.ok(b.editedDraft === null);
+  const cand = { ...candidate(), parameters: params() };
+  const p1 = projectPublicOpportunity(cand, 2);
+  assert.equal(canonicalPublicJson(p1), canonicalPublicJson({ ...p1 }));
+  const h1 = await hashPublicOpportunity(p1);
+  assert.match(h1, /^0x[0-9a-f]{64}$/);
+  assert.equal(await hashPublicOpportunity(p1), h1);
+  const approved = brief({
+    editedDraft: cand,
     draftRevision: 2,
-    editedDraft: {
-      deliverables: [{ id: "d1", text: "Changed scope", sourceRefs: ["seg_001"] }],
-      acceptanceCriteria: approved.immutableModelResult!.acceptanceCriteria,
-      exclusions: [],
-      openQuestions: [],
+    review: {
+      status: "approved",
+      approval: {
+        draftRevision: 2,
+        publicPayloadHash: h1,
+        canonicalPublicPayload: p1,
+        approvedBy: OWNER,
+        approvedAt: NOW(),
+      },
     },
-  };
-  assert.equal(isApprovalCurrent(edited), false);
-  assertPublicPayloadClean(p1);
+  });
+  assert.deepEqual(await validateBriefApproval(approved, 2, h1), p1);
+  // A stale revision or hash fails closed.
+  await assert.rejects(validateBriefApproval(approved, 3, h1), /REVISION_CONFLICT/);
+  await assert.rejects(validateBriefApproval(approved, 2, `0x${"00".repeat(32)}`), /PAYLOAD_MISMATCH/);
 });
 
 test("public projection carries allowlist only — no private fields", () => {
-  const b = brief();
-  const p = projectPublicPayload(b);
+  const p: PublicOpportunity = projectPublicOpportunity(candidate(), 1);
   const keys = Object.keys(p).sort();
   assert.deepEqual(keys, [
     "acceptanceCriteria",
-    "budgetCents",
+    "budgetUsdCents",
     "category",
     "contactUrl",
     "deadline",
     "deliverables",
     "exclusions",
     "language",
+    "namespace",
     "openQuestions",
     "revision",
     "schemaVersion",
+    "status",
     "summary",
     "title",
   ]);
@@ -157,63 +174,71 @@ test("public projection carries allowlist only — no private fields", () => {
   assert.ok(!blob.includes("brief-test-1"), "private database IDs must not leak");
 });
 
-test("opportunity text filter narrows without inventing records", () => {
-  const mk = (title: string, summary: string): OpportunityView => ({
-    entityKey: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    ownerAddress: "0x1111111111111111111111111111111111111111",
-    title,
-    summary,
-    category: "writing",
-    language: "en",
-    status: "open",
-    budgetCents: null,
-    contactUrl: null,
-    deadline: new Date(Date.now() + 3600_000).toISOString(),
-    revision: 1,
-    expiresAtBlock: null,
-    fetchedAt: new Date().toISOString(),
-    freshness: "fresh",
-  });
-  const list = [mk("Launch graphics", "community post"), mk("Explainer design", "visual guide")];
+test("opportunity view projects the canonical record without inventing data", () => {
+  const payload = projectPublicOpportunity(candidate(), 1);
+  const record: OpportunityRecord = {
+    entityKey: `0x${"ab".repeat(32)}`,
+    ownerAddress: OWNER,
+    payload,
+    expiresAtBlock: "123",
+    observedAtBlock: "120",
+    observedAt: NOW(),
+  };
+  const view = toOpportunityView(record);
+  assert.equal(view.title, "Launch graphics");
+  assert.equal(view.revision, 1);
+  assert.equal(view.budgetUsdCents, null);
+  assert.equal(view.freshness, "fresh");
+  const list: OpportunityView[] = [
+    view,
+    { ...view, entityKey: `0x${"cd".repeat(32)}` as OpportunityView["entityKey"], title: "Explainer design", summary: "visual guide" },
+  ];
   assert.equal(filterOpportunities(list, { query: "graphics" }).length, 1);
   assert.equal(filterOpportunities(list, { query: "nope-nothing" }).length, 0);
   assert.equal(filterOpportunities(list, {}).length, 2);
 });
 
-test("briefStateToScene parks the worker at the Planning Desk when idle", () => {
+test("briefStateToScene parks the worker at the Planning Desk when idle", async () => {
   const home = BUILDING_BY_ID.home.waypoint;
   const idle = briefStateToScene(null);
   assert.equal(idle.building, "home", "no active brief parks at the Planning Desk");
   assert.deepEqual({ x: idle.x, y: idle.y }, home);
-  assert.deepEqual({ x: briefStateToScene(brief({ executionStatus: "draft" })).x, y: briefStateToScene(brief({ executionStatus: "draft" })).y }, home);
+  assert.deepEqual(
+    { x: briefStateToScene(brief({ executionStatus: "draft" })).x, y: briefStateToScene(brief({ executionStatus: "draft" })).y },
+    home,
+  );
   assert.equal(briefStateToScene(brief({ executionStatus: "running" })).building, "studio");
   assert.equal(briefStateToScene(brief({ executionStatus: "ready" })).building, "treasury");
+  const cand = candidate({ status: "open" });
+  const payload = projectPublicOpportunity(cand, 1);
+  const h = await hashPublicOpportunity(payload);
   const approvedLive = brief({
     executionStatus: "ready",
-    reviewStatus: "approved",
-    approval: {
-      briefId: "brief-test-1",
-      draftRevision: 1,
-      canonicalPublicPayload: projectPublicPayload(brief()),
-      publicPayloadHash: hashPublicPayload(projectPublicPayload(brief())),
-      approvedBy: "0x1111111111111111111111111111111111111111",
-      approvedAt: new Date().toISOString(),
+    editedDraft: cand,
+    review: {
+      status: "approved",
+      approval: { draftRevision: 1, publicPayloadHash: h, canonicalPublicPayload: payload, approvedBy: OWNER, approvedAt: NOW() },
     },
     publication: {
-      briefId: "brief-test-1",
-      entityKey: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      publicRevision: 1,
-      pendingTxHash: null,
-      lastConfirmedTxHash: null,
-      observedPayloadHash: null,
-      expiresAtBlock: "123",
-      lastObservedStatus: "live",
-      observedAt: new Date().toISOString(),
+      status: "live",
       freshness: "fresh",
+      confirmed: {
+        entityKey: `0x${"bb".repeat(32)}`,
+        ownerAddress: OWNER,
+        publicRevision: 1,
+        observedPayloadHash: h,
+        lastConfirmedTransaction: `0x${"cc".repeat(32)}`,
+        expiresAtBlock: "123",
+        observedAt: NOW(),
+        observedAtBlock: "120",
+        status: "live",
+        externalChange: false,
+      },
+      pending: null,
     },
   });
   assert.equal(briefStateToScene(approvedLive).building, "registry");
-  assert.equal(briefStateToScene(brief({ executionStatus: "failed", error: { code: "PROVIDER_FAILED", message: "x" } })).unresolved, true);
+  assert.equal(briefStateToScene(brief({ executionStatus: "failed", error: { code: "PROVIDER_FAILED", message: "x", retryable: true } })).unresolved, true);
 });
 
 // --- Truthful city: pure state mapping (PRD §5, §10, BM-15) ---
@@ -235,7 +260,11 @@ import {
   STREET_X,
   STREET_Y,
 } from "../../src/components/city/walk-path";
-import type { BriefFreshness, ExecutionStatus, PublicationStatus, ReviewStatus } from "../../src/lib/shared/briefmint";
+
+type ExecutionStatus = BriefView["executionStatus"];
+type PublicationStatus = BriefView["publication"]["status"];
+type ReviewStatus = BriefView["review"]["status"];
+type BriefFreshness = BriefView["publication"]["freshness"];
 
 const EXECUTIONS: Array<ExecutionStatus | null> = [null, "draft", "running", "ready", "failed", "interrupted"];
 const REVIEWS: ReviewStatus[] = ["unreviewed", "approved"];
@@ -363,28 +392,52 @@ test("city mapping: quest marker points at the next real step", () => {
   });
 });
 
-test("city mapping: adapter from PrivateBrief", () => {
+test("city mapping: adapter from BriefView", async () => {
   assert.deepEqual(cityInputFromBrief(null), NO_BRIEF_INPUT);
+  const cand = candidate({ status: "open" });
+  const payload = projectPublicOpportunity(cand, 1);
   const live = brief({
-    reviewStatus: "approved",
+    editedDraft: cand,
     draftRevision: 2,
-    approval: {
-      briefId: "brief-test-1",
-      draftRevision: 1,
-      canonicalPublicPayload: projectPublicPayload(brief()),
-      publicPayloadHash: hashPublicPayload(projectPublicPayload(brief())),
-      approvedBy: "0x1111111111111111111111111111111111111111",
-      approvedAt: new Date().toISOString(),
+    review: {
+      status: "approved",
+      approval: {
+        draftRevision: 1,
+        publicPayloadHash: await hashPublicOpportunity(payload),
+        canonicalPublicPayload: payload,
+        approvedBy: OWNER,
+        approvedAt: new Date().toISOString(),
+      },
     },
   });
   // Edit after approval (revision 2 vs approved 1): approval is not current.
   assert.equal(cityInputFromBrief(live).approvalCurrent, false);
   assert.equal(deriveCityState(cityInputFromBrief(live)).release, "awaiting");
-  // A tx hash alone is not live.
-  const txOnly = brief({
-    publication: { ...brief().publication, lastObservedStatus: "live", lastConfirmedTxHash: "0xaa", entityKey: null },
+  // A pending intent without confirmed entity is not live.
+  const pendingOnly = brief({
+    publication: {
+      status: "pending",
+      freshness: "fresh",
+      confirmed: null,
+      pending: {
+        intent: {
+          intentId: ID,
+          operation: "create",
+          chainId: 7794095,
+          ownerAddress: OWNER,
+          entityKey: null,
+          basePayloadHash: null,
+          payload,
+          publicPayloadHash: await hashPublicOpportunity(payload),
+          expiresAtBlock: "999",
+          createdAt: new Date().toISOString(),
+        },
+        transactionHash: null,
+        state: "unknown",
+      },
+    },
   });
-  assert.equal(deriveCityState(cityInputFromBrief(txOnly)).registry, "pending");
+  assert.equal(deriveCityState(cityInputFromBrief(pendingOnly)).registry, "pending");
 });
 
 test("walk path: routes stay on streets and timing is proportional", () => {

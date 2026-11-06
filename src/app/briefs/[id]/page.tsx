@@ -1,8 +1,9 @@
 "use client";
 // Brief detail: private intake state, deliberate compilation (POST run — user
 // action only, never on mount), structured review with saved revisions, exact
-// public preview + approval, owner-signed publication with reconciliation, and
-// honest evidence. Polls while running/pending; reopening loads saved state.
+// public preview + approval, owner-signed publication with reconciliation,
+// read-only chain refresh, and honest evidence. Polls while running/pending;
+// reopening loads saved state.
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -13,8 +14,7 @@ import OpportunityPublisher from "@/components/briefs/OpportunityPublisher";
 import ReleaseDesk from "@/components/briefs/ReleaseDesk";
 import { isApiError } from "@/lib/client/briefmint-api";
 import { briefmintApi } from "@/lib/client/briefmint-api";
-import { useBrief } from "@/lib/client/use-briefs";
-import { RABDI_PUBLIC_RPC } from "@/lib/arkiv/opportunities-independent";
+import { useBrief, useRefreshPublication } from "@/lib/client/use-briefs";
 
 export default function BriefDetailPage() {
   const params = useParams();
@@ -22,6 +22,7 @@ export default function BriefDetailPage() {
   const id = Array.isArray(raw) ? raw[0] : raw;
   const valid = typeof id === "string" && id.length > 0;
   const briefQ = useBrief(valid ? id : undefined);
+  const refreshPub = useRefreshPublication();
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -37,6 +38,17 @@ export default function BriefDetailPage() {
       setRunError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not start compilation. Retry.");
     } finally {
       setRunBusy(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!briefQ.data) return;
+    setRunError(null);
+    try {
+      await refreshPub.mutateAsync(briefQ.data.id);
+      await briefQ.refetch();
+    } catch (e) {
+      setRunError(isApiError(e) ? `${e.code}: ${e.message}` : "Refresh failed.");
     }
   };
 
@@ -61,12 +73,13 @@ export default function BriefDetailPage() {
   } else {
     const brief = briefQ.data;
     const canStart = brief.executionStatus === "draft" || (brief.executionStatus === "failed" && brief.retryEligible);
+    const approved = brief.review.status === "approved" && brief.review.approval?.draftRevision === brief.draftRevision;
     body = (
       <>
         <p>
           <span className="badge badge-info">{brief.executionStatus}</span>{" "}
-          <span className="badge">{brief.reviewStatus}</span>{" "}
-          <span className="badge">{brief.publication.lastObservedStatus}</span>{" "}
+          <span className="badge">{brief.review.status}</span>{" "}
+          <span className="badge">{brief.publication.status}</span>{" "}
           <span className="tc-mono">{brief.id}</span>
         </p>
         {brief.error && <p className="error" role="alert">{brief.error.code}: {brief.error.message}</p>}
@@ -77,7 +90,7 @@ export default function BriefDetailPage() {
             <p key={s.id}><span className="tc-mono tc-muted">{s.id}</span> — {s.text}</p>
           ))}
         </div>
-        {(canStart) && (
+        {canStart && (
           <div className="card">
             <h2>{brief.executionStatus === "draft" ? "Start compilation" : "Retry compilation"}</h2>
             <p className="tc-muted">Runs once against the configured private model. Maximum bounded attempts; reopening never redispatches.</p>
@@ -92,10 +105,16 @@ export default function BriefDetailPage() {
         </div>
         <div className="card">
           <h2>Release Desk — approve exactly what publishes</h2>
-          <ReleaseDesk brief={brief} onSaved={() => void briefQ.refetch()} />
+          <ReleaseDesk key={`${brief.id}:${brief.draftRevision}`} brief={brief} onSaved={() => void briefQ.refetch()} />
         </div>
         <div className="card">
-          <OpportunityPublisher brief={brief} onSaved={() => void briefQ.refetch()} rpcLabel={RABDI_PUBLIC_RPC} />
+          <OpportunityPublisher brief={brief} onSaved={() => void briefQ.refetch()} rpcLabel="Rabdi 7794095" />
+          <div className="btn-row">
+            <button type="button" className="btn" disabled={refreshPub.isPending} onClick={handleRefresh}>
+              {refreshPub.isPending ? "Refreshing…" : "Refresh chain observation"}
+            </button>
+          </div>
+          {approved && <p className="tc-muted">Approved r{brief.draftRevision} — refresh re-reads the confirmed entity without signing or compiling.</p>}
         </div>
         <BriefEvidence brief={brief} />
       </>

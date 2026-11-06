@@ -101,3 +101,42 @@ native expiry of a short-lived demo) once San confirms the account role.
 - No live 0G compilation, approval, publication, or expiry has been exercised end to end.
 - Opportunity text search is client-side post-filter; indexed filters (category/status/budget) are server-side.
 - `details` JSON is bounded at 8 KiB; `title` at 100 UTF-8 bytes (chain `str` ≤ 128 bytes).
+
+---
+
+# Full-stack merge entry — briefmint/fullstack (Agent B)
+
+Merged `upstream/codex/payment-backend` (teammate backend, canonical contract
+v1.2) with this branch's Next-hosted HUD city. Merge commit keeps `apps/web`
+deleted and README resolved to canonical text without Vite-only instructions.
+
+## Frontend adaptations to the canonical contract
+
+- Shared: `briefmint.ts` is now a re-export adapter over `briefs.ts`
+  (`OpportunityView` projection, `toOpportunityView`, filter types, address
+  aliases only). `briefmint-validation.ts` keeps UI-only helpers (counters,
+  ids, client text filter); canonical validation/hash/projection come from
+  `briefs.ts`. Async Web-Crypto SHA-256 replaces the sync keccak stub.
+- Client: `briefmint-api.ts` validates every response against the `briefApi`
+  registry (zod `safeParse`); new `refresh` + content-Blob export; prepare
+  carries `{intentId, expectedRevision, publicPayloadHash, operation}`;
+  reconcile carries `{intentId, transactionHash, entityKey}` with 202 backoff.
+- Arkiv: frontend reads/writes go through canonical
+  `src/lib/arkiv/briefmint/*`; independent reader takes an explicit access key
+  and no backend session. Publisher prepares intents, signs with the browser
+  wallet, persists non-sensitive intent/tx identifiers locally, and reconciles
+  before reporting success.
+- Components/pages rewired to `BriefView` shapes (review.approval,
+  publication confirmed/pending, canonical evidence, BriefSummary list).
+  Session/login untouched (existing sessions remain valid for briefs).
+
+## Verification after adaptation
+
+- `npm run typecheck` — pass
+- `npm run lint` — pass (0 errors)
+- `npm run test:ui` — 27/27 pass (13 legacy + canonical contract/city tests)
+- `npm run test:server` — 126/126 pass (teammate suite, untouched)
+- `npm run build` — pass (`/api/briefs/*`, `/api/briefmint/config`, legacy
+  routes, `/`, `/briefs`, `/opportunities` all emitted)
+- Live gates unchanged and still open: authorized 0G inference, Arkiv
+  create/query/patch/expiry, wallet journey, hosting (see backend-checkpoint).

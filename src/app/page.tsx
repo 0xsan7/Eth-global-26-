@@ -10,54 +10,46 @@ import CityPanel from "@/components/city/CityPanel";
 import CityScene from "@/components/city/CityScene";
 import { briefStateToScene } from "@/components/city/brief-state-to-scene";
 import type { BuildingId } from "@/components/city/scene-config";
-import { readOpportunitiesIndependent, RABDI_PUBLIC_RPC } from "@/lib/arkiv/opportunities-independent";
+import { readOpportunitiesIndependent } from "@/lib/arkiv/opportunities-independent";
 import { briefmintApi, isApiError } from "@/lib/client/briefmint-api";
 import { useBriefs } from "@/lib/client/use-briefs";
 import { useSession } from "@/lib/client/use-session";
-import type { BriefMintConfig, OpportunityView, PrivateBrief } from "@/lib/shared/briefmint";
+import type { BriefmintConfig, BriefView, OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
 
 const ACTIVE_BRIEF_POLL = new Set(["running", "pending"]);
 
 export default function HomePage() {
   const sessionQ = useSession();
   const address = sessionQ.address;
-  const [briefConfig, setBriefConfig] = useState<BriefMintConfig | null>(null);
+  const [briefConfig, setBriefConfig] = useState<BriefmintConfig | null>(null);
   const [briefConfigError, setBriefConfigError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunityView[]>([]);
   const [oppLoading, setOppLoading] = useState(true);
   const [oppError, setOppError] = useState<string | null>(null);
   const [oppStale, setOppStale] = useState(false);
+  const [oppFilters, setOppFilters] = useState<OpportunityFilters>({ status: "open" });
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [building, setBuilding] = useState<BuildingId>("home");
-  const [brief, setBrief] = useState<PrivateBrief | null>(null);
+  const [brief, setBrief] = useState<BriefView | null>(null);
   const briefsQ = useBriefs(!!address);
-  const briefSummaries = (briefsQ.data?.briefs ?? []).map((b) => ({ id: b.id, title: b.title, category: b.category }));
+  const briefSummaries = briefsQ.data?.briefs ?? [];
   const briefsLoading = briefsQ.isLoading;
   const [runBusy, setRunBusy] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
-  const loadOpportunities = useCallback(async (rpcUrl: string) => {
+  const loadOpportunities = useCallback(async (filters: OpportunityFilters) => {
     setOppLoading(true);
     setOppError(null);
-    // Prefer the backend list when it is deployed; always fall back to the
-    // independent reader so public discovery works without the private API.
+    // Public discovery runs through the independent Arkiv reader: no backend
+    // opportunities endpoint exists in the frozen contract.
     try {
-      const res = await briefmintApi.listOpportunities();
-      setOpportunities(res.opportunities);
-      setOppStale(false);
-      setLastRefresh(new Date().toISOString());
-      setSelectedKey((prev) => prev ?? res.opportunities.find((o) => o.status === "open")?.entityKey ?? res.opportunities[0]?.entityKey ?? null);
-      return;
-    } catch {
-      // Backend unavailable — independent read below.
-    }
-    try {
-      const list = await readOpportunitiesIndependent({ rpcUrl }, { status: "all" });
+      const list = await readOpportunitiesIndependent({ accessKey: "" }, filters);
       setOpportunities((prev) => {
         if (prev.length > 0) setOppStale(true);
         return list;
       });
+      setOppStale(false);
       setLastRefresh(new Date().toISOString());
       setSelectedKey((prev) => prev ?? list.find((o) => o.status === "open")?.entityKey ?? list[0]?.entityKey ?? null);
     } catch {
@@ -76,12 +68,10 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let rpc = RABDI_PUBLIC_RPC;
       try {
         const cfg = await briefmintApi.config();
         if (cancelled) return;
         setBriefConfig(cfg);
-        if (cfg.arkiv.rpcUrl) rpc = cfg.arkiv.rpcUrl;
       } catch (e) {
         if (cancelled) return;
         setBriefConfigError(
@@ -90,7 +80,7 @@ export default function HomePage() {
             : "BriefMint config unavailable.",
         );
       }
-      await loadOpportunities(rpc);
+      await loadOpportunities({ status: "open" });
     })();
     return () => {
       cancelled = true;
@@ -100,11 +90,19 @@ export default function HomePage() {
   // Refresh discovery when the window regains focus.
   useEffect(() => {
     const onFocus = () => {
-      void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC);
+      void loadOpportunities(oppFilters);
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [briefConfig, loadOpportunities]);
+  }, [oppFilters, loadOpportunities]);
+
+  const handleFiltersChange = useCallback(
+    (f: OpportunityFilters) => {
+      setOppFilters(f);
+      void loadOpportunities(f);
+    },
+    [loadOpportunities],
+  );
 
   // Account change clears the prior owner's private brief UI state
   // (query caches are cleared by useSessionAccountSync in the provider).
@@ -118,7 +116,7 @@ export default function HomePage() {
 
   // Poll the active brief ~2s; reopening a saved brief just loads state.
   useEffect(() => {
-    if (!brief || (!ACTIVE_BRIEF_POLL.has(brief.executionStatus) && brief.publication.lastObservedStatus !== "pending")) return;
+    if (!brief || (!ACTIVE_BRIEF_POLL.has(brief.executionStatus) && brief.publication.status !== "pending")) return;
     const t = setInterval(async () => {
       try {
         setBrief(await briefmintApi.getBrief(brief.id));
@@ -145,6 +143,7 @@ export default function HomePage() {
 
   const selectedOpportunity = opportunities.find((o) => o.entityKey === selectedKey) ?? null;
   const scene = briefStateToScene(brief);
+  const approved = brief?.review.status === "approved" && brief.review.approval?.draftRevision === brief.draftRevision;
 
   // The single next action for the bottom bar (existing navigation + run handler only).
   const nextAction: { label: string; run: () => void; busy?: boolean } | null = (() => {
@@ -157,14 +156,14 @@ export default function HomePage() {
       return { label: runBusy ? "Compiling…" : "Retry compilation", run: handleRun, busy: runBusy };
     }
     if (brief.executionStatus === "running") return null;
-    if (brief.executionStatus === "ready" && brief.reviewStatus !== "approved")
+    if (brief.executionStatus === "ready" && !approved)
       return { label: "Review and approve", run: () => setBuilding("treasury") };
-    if (brief.publication.lastObservedStatus === "pending") return null;
-    if (brief.publication.lastObservedStatus === "live")
+    if (brief.publication.status === "pending") return null;
+    if (brief.publication.status === "live")
       return { label: "View live opportunity", run: () => setBuilding("registry") };
-    if (brief.publication.lastObservedStatus === "closed" || brief.publication.lastObservedStatus === "expired")
+    if (brief.publication.status === "closed" || brief.publication.status === "expired")
       return { label: "View in Archive", run: () => setBuilding("archive") };
-    if (brief.executionStatus === "ready" && brief.reviewStatus === "approved")
+    if (brief.executionStatus === "ready" && approved)
       return { label: "Publish opportunity", run: () => setBuilding("registry") };
     return null;
   })();
@@ -173,9 +172,12 @@ export default function HomePage() {
   const idleHint =
     brief?.executionStatus === "running"
       ? "Compiling — polling the saved record"
-      : brief?.publication.lastObservedStatus === "pending"
+      : brief?.publication.status === "pending"
         ? "Waiting for on-chain confirmation"
         : "Follow the worker to continue";
+  const servicesReady = briefConfig
+    ? briefConfig.compilation.available && briefConfig.arkiv.readiness.available && briefConfig.auth.readiness.available
+    : null;
 
   return (
     <div className="city-page">
@@ -190,7 +192,7 @@ export default function HomePage() {
         notice={
           briefConfigError ? (
             <p className="notice notice-warn" role="status">{briefConfigError} Saving, compiling and publishing are unavailable until the backend responds.</p>
-          ) : briefConfig && !briefConfig.ready ? (
+          ) : briefConfig && servicesReady === false ? (
             <p className="notice notice-warn" role="status">Some BriefMint services are not ready: intake, compilation or Arkiv may be unavailable.</p>
           ) : null
         }
@@ -207,8 +209,6 @@ export default function HomePage() {
       >
         <CityPanel
           building={building}
-          briefConfig={briefConfig}
-          briefConfigError={briefConfigError}
           brief={brief}
           briefs={briefSummaries}
           briefsLoading={briefsLoading}
@@ -217,7 +217,9 @@ export default function HomePage() {
           opportunitiesError={oppError}
           opportunitiesStale={oppStale}
           lastRefresh={lastRefresh}
-          onRefreshOpportunities={() => void loadOpportunities(briefConfig?.arkiv.rpcUrl ?? RABDI_PUBLIC_RPC)}
+          onRefreshOpportunities={() => void loadOpportunities(oppFilters)}
+          oppFilters={oppFilters}
+          onOppFiltersChange={handleFiltersChange}
           selectedOpportunity={selectedOpportunity}
           onSelectOpportunity={(o) => setSelectedKey(o.entityKey)}
           onBriefCreated={(b) => { setBrief(b); setBuilding("studio"); }}

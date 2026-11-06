@@ -1,5 +1,5 @@
 "use client";
-// My Briefs: owner-authenticated private summaries via the PROPOSED BriefMint API.
+// My Briefs: owner-authenticated private summaries via the canonical BriefMint API.
 // 401 → login prompt. 503 → backend unavailable (honest, no fixtures).
 import AppShell from "@/components/app/AppShell";
 import BriefList from "@/components/briefs/BriefList";
@@ -33,8 +33,7 @@ export default function BriefsPage() {
       </p>
     );
   } else {
-    const rows = (briefsQ.data?.briefs ?? []).map((b) => ({ id: b.id, title: b.title, category: b.category }));
-    body = <BriefList briefs={rows as unknown as Parameters<typeof BriefList>[0]["briefs"]} />;
+    body = <BriefList briefs={briefsQ.data?.briefs ?? []} />;
   }
 
   return (
