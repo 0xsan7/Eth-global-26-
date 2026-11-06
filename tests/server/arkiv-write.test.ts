@@ -27,6 +27,7 @@ function wallet(chain = 7794095, account = owner) {
     if (method === "eth_accounts") return [account];
     if (method === "eth_getTransactionCount") return "0x0";
     if (method === "eth_sendTransaction") return tx;
+    if (method === "wallet_sendTransaction") return tx;
     throw new Error("Unexpected offline RPC");
   }) };
 }
@@ -93,5 +94,14 @@ describe("owner-signed Arkiv SDK write boundary (offline)", () => {
     mock.create.mockImplementationOnce(async () => mock.config!.transport({ retryCount: 0 }).request({ method: "eth_sendTransaction", params: [] }));
     await expect(writeArkivIntent(await intent(), "", provider, broadcast, value => diagnostics.push(value))).rejects.toThrow(/no valid broadcast/);
     expect(broadcast).not.toHaveBeenCalled(); expect(diagnostics.at(-1)?.phase).toBe("invalid_wallet_response");
+  });
+  it("captures a first wallet_sendTransaction hash before SDK receipt handling", async () => {
+    const broadcast = vi.fn();
+    mock.create.mockImplementationOnce(async () => {
+      await mock.config!.transport({ retryCount: 0 }).request({ method: "wallet_sendTransaction", params: [] });
+      expect(broadcast).toHaveBeenCalledWith(tx);
+      return { txHash: tx, entityKey: key };
+    });
+    expect(await writeArkivIntent(await intent(), "", wallet(), broadcast)).toMatchObject({ transactionHash: tx });
   });
 });

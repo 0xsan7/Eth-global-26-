@@ -42,13 +42,19 @@ export async function writeArkivIntent(intentInput: PublicationIntent, accessKey
   let nonceBeforeSend: string | null = null;
   let target: string | null = null;
   let calldataHash: `0x${string}` | null = null;
+  let submissionStarted = false;
+  let submissionFailure: unknown;
   const report = (phase: ArkivWriteDiagnostic["phase"], method: string, code: number | null = null) => {
     try { onDiagnostic?.({ phase, method, rpcCode: code, chainId: BRIEFMINT_CHAIN_ID, nonceBeforeSend,
       target, calldataHash, transactionHash, observedAt: new Date().toISOString() }); } catch { /* Do not retry a broadcast because diagnostics failed. */ }
   };
   const observedProvider: Eip1193 = { async request(args) {
-    const sending = ["eth_sendTransaction", "eth_sendRawTransaction"].includes(args.method);
-    if (args.method === "eth_sendTransaction") {
+    const sending = ["eth_sendTransaction", "wallet_sendTransaction", "eth_sendRawTransaction"].includes(args.method);
+    // viem may fall back to wallet_sendTransaction after an eth_sendTransaction
+    // error even with retryCount=0. Never forward a second ambiguous submission.
+    if (sending && submissionStarted) throw submissionFailure ?? new Error("A transaction submission was already attempted; reconcile its outcome.");
+    if (sending) submissionStarted = true;
+    if (args.method === "eth_sendTransaction" || args.method === "wallet_sendTransaction") {
       const tx = args.params?.[0] as { to?: unknown; data?: unknown; nonce?: unknown } | undefined;
       target = typeof tx?.to === "string" && /^0x[0-9a-f]{40}$/i.test(tx.to) ? tx.to.toLowerCase() : null;
       calldataHash = typeof tx?.data === "string" && /^0x(?:[0-9a-f]{2})*$/i.test(tx.data) ? keccak256(tx.data as `0x${string}`) : null;
@@ -59,7 +65,7 @@ export async function writeArkivIntent(intentInput: PublicationIntent, accessKey
     if (sending) report("wallet_confirmation", args.method);
     let result: unknown;
     try { result = await provider.request(args); }
-    catch (error) { report("rpc_failed", args.method, rpcCode(error)); throw error; }
+    catch (error) { if (sending) submissionFailure = error; report("rpc_failed", args.method, rpcCode(error)); throw error; }
     if (sending) {
       if (typeof result !== "string" || !/^0x[0-9a-f]{64}$/i.test(result)) {
         report("invalid_wallet_response", args.method);
