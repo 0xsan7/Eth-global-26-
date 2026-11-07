@@ -18,15 +18,26 @@ export default function OpportunitiesPage() {
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const [selected, setSelected] = useState<OpportunityView | null>(null);
   const [filters, setFilters] = useState<OpportunityFilters>({ status: "open" });
+  const [accessKey, setAccessKey] = useState("");
   const readEpoch = useRef(0);
   const rowCount = useRef(0);
 
-  const load = useCallback(async (f: OpportunityFilters) => {
+  const load = useCallback(async (f: OpportunityFilters, rawAccessKey: string) => {
     const epoch = ++readEpoch.current;
+    const key = rawAccessKey.trim();
+    if (!key) {
+      setLoading(false);
+      setError(null);
+      setRows([]);
+      setSelected(null);
+      setLastRefresh(null);
+      rowCount.current = 0;
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const list = await readOpportunitiesIndependent({ accessKey: "" }, f);
+      const list = await readOpportunitiesIndependent({ accessKey: key }, f);
       if (epoch !== readEpoch.current) return;
       rowCount.current = list.length;
       setRows(list);
@@ -47,7 +58,7 @@ export default function OpportunitiesPage() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => { void load({ status: "open" }); }, 0);
+    const timer = setTimeout(() => { void load({ status: "open" }, ""); }, 0);
     return () => {
       clearTimeout(timer);
       readEpoch.current += 1;
@@ -57,9 +68,9 @@ export default function OpportunitiesPage() {
   const handleFilters = useCallback(
     (f: OpportunityFilters) => {
       setFilters(f);
-      void load(f);
+      void load(f, accessKey);
     },
-    [load],
+    [accessKey, load],
   );
 
   return (
@@ -71,17 +82,20 @@ export default function OpportunitiesPage() {
         </p>
         <OpportunityBoard
           opportunities={rows}
+          accessKey={accessKey}
+          onAccessKeyChange={setAccessKey}
+          needsAccessKey={!accessKey.trim()}
           loading={loading}
           error={error}
           lastRefresh={lastRefresh}
           stale={stale}
-          onRefresh={() => load(filters)}
+          onRefresh={() => load(filters, accessKey)}
           selected={selected}
           onSelect={setSelected}
           filters={filters}
           onFiltersChange={handleFilters}
         />
-        <OpportunityReader />
+        <OpportunityReader accessKey={accessKey} />
       </div>
     </AppShell>
   );

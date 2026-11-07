@@ -7,8 +7,14 @@ import { useState } from "react";
 import { readOpportunitiesIndependent, readOpportunityIndependent, RABDI_PUBLIC_RPC } from "@/lib/arkiv/opportunities-independent";
 import type { Hex, OpportunityView } from "@/lib/shared/briefmint";
 
-export default function OpportunityReader() {
-  const [accessKey, setAccessKey] = useState("");
+interface OpportunityReaderProps {
+  accessKey?: string;
+}
+
+export default function OpportunityReader(props: OpportunityReaderProps = {}) {
+  const [localAccessKey, setLocalAccessKey] = useState("");
+  const accessKey = props.accessKey ?? localAccessKey;
+  const sharedKey = props.accessKey !== undefined;
   const [category, setCategory] = useState<"writing" | "design" | "all">("all");
   const [status, setStatus] = useState<"open" | "closed" | "all">("open");
   const [rows, setRows] = useState<OpportunityView[] | null>(null);
@@ -61,10 +67,12 @@ export default function OpportunityReader() {
     <div className="card">
       <h3>Independent Arkiv reader (no backend needed)</h3>
       <p className="tc-muted">Queries indexed public records directly. No wallet, no session, no private data. RPC: {RABDI_PUBLIC_RPC}</p>
-      <div className="form-field">
-        <label htmlFor="reader-key">Arkiv access key (public rate-limit key; never committed)</label>
-        <input id="reader-key" type="text" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} disabled={busy} autoComplete="off" placeholder="Paste operator-provided key" />
-      </div>
+      {sharedKey ? <p className="tc-muted">Uses the key entered in Public Opportunities above; it stays in page memory only.</p> : (
+        <div className="form-field">
+          <label htmlFor="reader-key">Arkiv access key (public rate-limit key; never committed)</label>
+          <input id="reader-key" type="password" value={accessKey} onChange={(e) => setLocalAccessKey(e.target.value)} disabled={busy} autoComplete="off" spellCheck={false} placeholder="Paste operator-provided key" />
+        </div>
+      )}
       <div className="btn-row">
         <label>Category <select value={category} onChange={(e) => setCategory(e.target.value as "writing" | "design" | "all")} disabled={busy}><option value="all">All</option><option value="writing">Writing</option><option value="design">Design</option></select></label>
         <label>Status <select value={status} onChange={(e) => setStatus(e.target.value as "open" | "closed" | "all")} disabled={busy}><option value="open">Open</option><option value="closed">Closed</option><option value="all">All</option></select></label>

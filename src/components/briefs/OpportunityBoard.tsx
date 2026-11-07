@@ -10,6 +10,9 @@ import { filterOpportunities } from "@/lib/shared/briefmint-validation";
 
 interface OpportunityBoardProps {
   opportunities: OpportunityView[];
+  accessKey?: string;
+  onAccessKeyChange?: (value: string) => void;
+  needsAccessKey?: boolean;
   loading: boolean;
   error: string | null;
   lastRefresh: string | null;
@@ -63,6 +66,21 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
           </select>
         </label>
       </div>
+      {p.onAccessKeyChange && (
+        <div className="form-field">
+          <label htmlFor="opportunities-access-key">Arkiv access key (public rate-limit key)</label>
+          <input
+            id="opportunities-access-key"
+            type="password"
+            value={p.accessKey ?? ""}
+            onChange={(event) => p.onAccessKeyChange?.(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Paste operator-provided key"
+          />
+          <p className="field-help">Kept in this page’s memory only. Refresh to query the public Arkiv index.</p>
+        </div>
+      )}
       <div className="form-field">
         <label htmlFor="opp-query">Search title/summary</label>
         <input id="opp-query" type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. launch graphics" />
@@ -71,7 +89,10 @@ export default function OpportunityBoard(p: OpportunityBoardProps) {
       {p.stale && !p.loading && <p className="notice" role="status">Showing last confirmed list (stale) — the catalogue could not be refreshed.</p>}
       {p.loading && <p className="tc-muted">Querying Arkiv indexed records…</p>}
       {p.error && !p.loading && <p className="error" role="alert">{p.error}</p>}
-      {!p.loading && !p.error && p.opportunities.length === 0 && (
+      {!p.loading && !p.error && p.needsAccessKey && (
+        <p className="notice" role="status">Enter an operator-provided Arkiv access key above, then refresh the public catalogue.</p>
+      )}
+      {!p.loading && !p.error && !p.needsAccessKey && p.opportunities.length === 0 && (
         <p className="tc-muted">No opportunities published yet — the public catalogue is empty (not an error).</p>
       )}
       {!p.loading && !p.error && p.opportunities.length > 0 && visible.length === 0 && (
