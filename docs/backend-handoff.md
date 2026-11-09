@@ -12,6 +12,9 @@ Production browser checks covered `/opportunities` at 1440, 390, and 320 CSS px,
 
 Release gates remain open: an authorized 0G inference with cost/quality validation; independent response verification; the real browser wallet journey; owner-authorized Arkiv create/query/update/close/expiry and independent readback; HTTPS hosting with persistent-volume restart/restore evidence; and dependency/license review plus submission evidence. A previous operator-run inference returned HTTP 502 (`PROVIDER_UNAVAILABLE`) and billing is uncertain. No live inference, wallet signing, Arkiv write, or deployment is claimed here.
 
+Publishing status: implementation commit `fdcfbd5` is on `codex/ui-improvement` and was pushed successfully to `origin`. No PR or main merge was created; the literal requested branch name contains a space, so the valid repository-compliant ref is `codex/ui-improvement`.
+
+
 See [current checkpoint](briefmint/backend-checkpoint.md), [integration contract](briefmint/integration-contract.md), [teammate handoff](briefmint/agent-b-handoff.md) and [local setup/privacy runbook](briefmint/local-integration.md). Historical sections below retain their original counts and context.
 
 ## 0G first-request preflight — 6 November 2026
