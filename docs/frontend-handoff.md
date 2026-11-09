@@ -122,3 +122,17 @@ What Agent A must merge or do next:
 - The engine only reads `CityState`. Camera moves write a CSS transform onto the hit layer; no
   React state per frame. Fixture previews never get green/live colouring on tags or chips.
 - Narrow screens: the map becomes a 62vh viewport and the windows stack below it.
+
+## UI polish handoff — 2026-11-06
+The presentation pass added the dashboard-only cloud backdrop, design tokens/next-font setup, glass HUD and Adjust glass control, Opportunities cards/filters, and deterministic city overlays for record plots, landmarks, scenery, boats and ambient routes. Phase commits and evidence are recorded in `docs/ui-progress.md` and `docs/ui-audit.md`. Added exact packages: gsap 3.15.1, @gsap/react 2.1.2, lucide-react 1.70.0. The VM has no wallet and the BriefMint session/brief APIs report unavailable; real wallet and Arkiv lifecycle behavior was not tested. Headless screenshots are saved outside Git at `/tmp/shots/` (desktop/mobile); the mobile city screenshot was refreshed after the responsive overlay adjustment.
+
+Independent reviewer (SA-7) reran lint, typecheck, server/UI tests and build successfully. Browser/wallet/device interactions remain manual; see `docs/ui-audit.md`. Reviewer noted soft road avoidance, no explicit ambient-entity/label overlap verification, a retained legacy `job-state-to-scene.ts` candidate, and one mixed Phase3 wiring/removal commit. The PRD and source licenses still require human confirmation.
+
+## Responsive UI and production-safety follow-up — 10 November 2026
+
+- Dashboard navigation now stacks below the brand/wallet row at narrow widths. Dashboard cards shrink to one `minmax(0, 1fr)` column at 640 px and below; the tall opportunities filter stops sticking on phones.
+- The default opportunity detail can now be dismissed without immediately selecting the first row again. The mobile sheet is an accessible `dialog`; clicking inside does not dismiss it, and Close/Escape work.
+- Development fixtures require an explicit opt-in and are disabled for production. The production browser showed no fixtures and reported unconfigured Arkiv as unavailable.
+- Replaced source-reading UI tests with behavioral selection and fixture-gate tests. Current checks: `npm test` (182 server / 157 UI), `npm run lint`, `npm run typecheck`, `npm run build`, and `npm run smoke:local` all passed. The build's nonfatal checkout-demo bundle-size warning remains.
+- Headless checks: `/opportunities` at 1440/390/320 px, `/briefs` at 320 px, `/` at 390 px; no horizontal overflow. Same-origin development fixture check at 320 px showed two 248 px cards and working detail selection/dismissal. Production Arkiv RPC was intentionally blocked by the browser allowlist; no live integration was tested.
+
