@@ -2,7 +2,7 @@
 // Owner publication: prepare an approved intent with the backend, sign the
 // Arkiv write with the connected project-owner wallet, then reconcile the
 // confirmed entity with the backend. A submitted transaction alone is never
-// treated as success — `pending` stays until the server confirms owner,
+// treated as success, `pending` stays until the server confirms owner,
 // payload, revision, and expiry. Never requests a private key; signing
 // happens in the browser wallet. Intent and broadcast identifiers are
 // persisted locally (non-sensitive) before reporting success.
@@ -112,7 +112,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
     try {
       const generation = currentSessionGeneration();
       if (!address || address.toLowerCase() !== brief.ownerAddress.toLowerCase()) throw new Error("Connect and sign in with the owner wallet first.");
-      if (!brief.editedDraft) throw new Error("No saved draft to publish — compile and save first.");
+      if (!brief.editedDraft) throw new Error("No saved draft to publish, compile and save first.");
       if (!approved) throw new Error("Only the currently approved revision can be published.");
       if (pending && pending.state !== "prepared") {
         throw new Error("This publication attempt is already uncertain or submitted. Reconcile it; do not sign again.");
@@ -303,7 +303,7 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
       <p>
         Status: <span className="badge badge-info">{brief.publication.status}</span>{" "}
         <span className="badge">{brief.publication.freshness}</span>
-        {pending && <span className="tc-muted"> — intent {pending.state}; do not sign again while this attempt is unresolved.</span>}
+        {pending && <span className="tc-muted">, intent {pending.state}; do not sign again while this attempt is unresolved.</span>}
       </p>
       {confirmed && (
         <p className="tc-mono tc-muted">
@@ -311,12 +311,12 @@ export default function OpportunityPublisher({ brief, onSaved, rpcLabel }: Oppor
           {confirmed.expiresAtBlock ? ` · expires at block ${confirmed.expiresAtBlock}` : ""}
         </p>
       )}
-      {lastTx && <p className="tc-mono tc-muted">Broadcast tx: {lastTx} — confirmation status is shown above.</p>}
+      {lastTx && <p className="tc-mono tc-muted">Broadcast tx: {lastTx}, confirmation status is shown above.</p>}
       {diagnostic && <p className="tc-muted" role="status">Wallet stage: {diagnostic.phase} · {diagnostic.method}{diagnostic.rpcCode === null ? "" : ` · RPC ${diagnostic.rpcCode}`}</p>}
       {phase === "reconciling" && <p role="status">Reconciling on-chain entity with the backend…</p>}
       {phase === "pending" && <p role="status">Publication remains locked until the backend confirms its outcome.</p>}
       {error && <p className="error" role="alert">{error}</p>}
-      {phase === "done" && <p className="notice" role="status">Reconciliation finished — see the confirmed status above.</p>}
+      {phase === "done" && <p className="notice" role="status">Reconciliation finished, see the confirmed status above.</p>}
       {pending && pending.state !== "prepared" && !pending.transactionHash && (
         <div className="form-field">
           <label htmlFor="arkiv-recovery-hash">Known transaction hash for recovery (optional; never invent one)</label>

@@ -3,86 +3,93 @@
 // Works without a wallet session or the BriefMint API. An explicit Arkiv
 // access key (operator-provided public rate-limit key, never committed)
 // enables reads; failures stay distinct from an empty catalogue.
-import { useCallback, useEffect, useRef, useState } from "react";
+// FIX 4: page built from the dashboard system — header block, filter block,
+// results grid, detail panel (inside the board), developer reader block.
+import { useCallback, useState } from "react";
 import AppShell from "@/components/app/AppShell";
+import PageShell from "@/components/dashboard/PageShell";
+import Block from "@/components/dashboard/Block";
 import OpportunityBoard from "@/components/briefs/OpportunityBoard";
 import OpportunityReader from "@/components/briefs/OpportunityReader";
-import { readOpportunitiesIndependent } from "@/lib/arkiv/opportunities-independent";
+import { FreshnessChip } from "@/components/opportunities/OpportunityCard";
+import {
+  formatRefresh,
+  freshnessFor,
+  parseTimestamp,
+} from "@/components/opportunities/opportunity-format";
+import { useOpportunities } from "@/components/use-opportunities-data";
+import { resolveOpportunitySelection } from "@/components/opportunities/selection";
 import type { OpportunityFilters, OpportunityView } from "@/lib/shared/briefmint";
+import { devFixturesEnabled } from "@/lib/shared/fixtures";
+import "@/components/opportunities/opportunities.css";
 
 export default function OpportunitiesPage() {
-  const [rows, setRows] = useState<OpportunityView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<string | null>(null);
-  const [selected, setSelected] = useState<OpportunityView | null>(null);
+  // FIX 7: this page consumes the same shared opportunity source as the city
+  // scan/panel (one hook, one shared cache and freshness value); only its
+  // filter state stays local. Fixture previews via ?state= are handled in the source.
+  const { rows, loading, error, stale, lastRefresh, refresh } = useOpportunities();
+  const [picked, setPicked] = useState<OpportunityView | null>(null);
+  const [selectionDismissed, setSelectionDismissed] = useState(false);
   const [filters, setFilters] = useState<OpportunityFilters>({ status: "open" });
-  const readEpoch = useRef(0);
-  const rowCount = useRef(0);
+  const fixtures = devFixturesEnabled();
 
-  const load = useCallback(async (f: OpportunityFilters) => {
-    const epoch = ++readEpoch.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await readOpportunitiesIndependent({ accessKey: "" }, f);
-      if (epoch !== readEpoch.current) return;
-      rowCount.current = list.length;
-      setRows(list);
-      setStale(false);
-      setLastRefresh(new Date().toISOString());
-      setSelected((prev) => list.find((row) => row.entityKey === prev?.entityKey) ?? list[0] ?? null);
-    } catch {
-      if (epoch !== readEpoch.current) return;
-      if (rowCount.current > 0) {
-        setStale(true);
-        setError("Arkiv query failed — showing last confirmed list (stale).");
-      } else {
-        setError("Arkiv query failed. The catalogue could not be refreshed; this does not mean records were withdrawn.");
-      }
-    } finally {
-      if (epoch === readEpoch.current) setLoading(false);
-    }
+  // Keep the default detail open until dismissal; a deliberate pick survives refresh reordering.
+  const selected = resolveOpportunitySelection(rows, picked, selectionDismissed);
+  const handleSelect = useCallback((opportunity: OpportunityView) => {
+    setPicked(opportunity);
+    setSelectionDismissed(false);
   }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => { void load({ status: "open" }); }, 0);
-    return () => {
-      clearTimeout(timer);
-      readEpoch.current += 1;
-    };
-  }, [load]);
+  const handleDeselect = useCallback(() => {
+    setPicked(null);
+    setSelectionDismissed(true);
+  }, []);
 
   const handleFilters = useCallback(
     (f: OpportunityFilters) => {
       setFilters(f);
-      void load(f);
+      refresh(f);
     },
-    [load],
+    [refresh],
   );
+
+  const freshness = freshnessFor(stale || (!!error && rows.length > 0));
+  const lastRefreshedAt = parseTimestamp(lastRefresh);
 
   return (
     <AppShell>
-      <div className="tc-page">
-        <h1>Public opportunities</h1>
-        <p className="tc-muted">
-          Indexed Arkiv records any application can discover. Reader works without the BriefMint API or a wallet session.
-        </p>
+      <PageShell>
+        <section className="bm-block bm-glass bm-glass--text opp-header" aria-label="Public opportunities">
+          <div className="bm-block__head bm-block__head--baseline">
+            <h1 className="bm-title opp-header__title">Public opportunities</h1>
+            <span className="bm-block__action opp-header__meta">
+              <FreshnessChip freshness={freshness} />
+              {fixtures && <span className="bm-chip bm-chip--warn">FIXTURE DATA</span>}
+              <span className="bm-muted opp-header__refresh">{formatRefresh(lastRefreshedAt)}</span>
+            </span>
+          </div>
+          <div className="bm-block__body">
+            <p className="bm-secondary bm-measure">
+              Indexed Arkiv records any application can discover. Reading works without the BriefMint API or a wallet session.
+            </p>
+          </div>
+        </section>
         <OpportunityBoard
           opportunities={rows}
           loading={loading}
           error={error}
           lastRefresh={lastRefresh}
           stale={stale}
-          onRefresh={() => load(filters)}
+          onRefresh={() => refresh(filters)}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={handleSelect}
+          onDeselect={handleDeselect}
           filters={filters}
           onFiltersChange={handleFilters}
         />
-        <OpportunityReader />
-      </div>
+        <Block collapsible title="Developer reader" ariaLabel="Developer reader" className="opp-reader-block">
+          <OpportunityReader />
+        </Block>
+      </PageShell>
     </AppShell>
   );
 }

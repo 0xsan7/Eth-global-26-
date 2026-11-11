@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="docs/assets/briefmint-cover.svg" alt="BriefMint — Private ideas. Public opportunities. Workflow illustration." width="100%" />
+<img src="docs/assets/briefmint-cover.svg" alt="BriefMint, private ideas. Public opportunities. Workflow illustration." width="100%" />
 
 # BriefMint
 
 **Turn private project notes into clear, owner-approved public opportunities.**
 
 A wallet-connected workspace for community leads: draft with **0G**, review every public field,<br />
-then publish a discoverable, wallet-owned opportunity on **Arkiv** — all inside **Tool City**.
+then publish a discoverable, wallet-owned opportunity on **Arkiv**, all inside **Tool City**.
 
 [See the UI](#inside-tool-city) · [Explore the workflow](#the-workflow) · [See live evidence](#demonstrated-on-testnet) · [Run locally](#run-locally) · [Architecture](docs/architecture/ARCHITECTURE.md) · [Demo guide](docs/submission/DEMO_GUIDE.md)
 
@@ -19,7 +19,7 @@ then publish a discoverable, wallet-owned opportunity on **Arkiv** — all insid
 
 ## Good opportunities start before the listing
 
-A community lead knows what needs doing. The brief is scattered across planning notes: unfinished ideas, internal constraints and requirements that still need clarification. Contributors need a clear scope — without receiving all that private context.
+A community lead knows what needs doing. The brief is scattered across planning notes: unfinished ideas, internal constraints and requirements that still need clarification. Contributors need a clear scope, without receiving all that private context.
 
 BriefMint turns those notes into a structured proposal with deliverables, acceptance criteria, exclusions and open questions. The owner edits the proposal, reviews its public version and approves exactly what gets published.
 
@@ -110,7 +110,7 @@ The owner can change the wording before approving the public projection. This il
 | **Independent read** | Standalone public reader returned the entity without app API, cookies or SQLite. |
 | **Offline verification checkpoint** | 176 server tests, 27 UI tests, typecheck, lint, production build and no-billing HTTP smoke passed. [Commands and results →](docs/submission/VERIFICATION.md) |
 
-**Verify the public entity yourself** — no wallet or application server required:
+**Verify the public entity yourself**, no wallet or application server required:
 
 ```sh
 node --import tsx scripts/briefmint-arkiv-reader.ts \

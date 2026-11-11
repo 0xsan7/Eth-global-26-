@@ -121,7 +121,7 @@ export default function BriefReview({ brief, onSaved }: BriefReviewProps) {
       if (!isCurrentSessionGeneration(generation)) return;
       onSaved(updated);
     } catch (e) {
-      if (isApiError(e) && e.status === 409) setError("CONFLICT: the brief changed — reload the saved revision before editing.");
+      if (isApiError(e) && e.status === 409) setError("CONFLICT: the brief changed, reload the saved revision before editing.");
       else setError(isApiError(e) ? `${e.code}: ${e.message}${e.retryable ? " (retryable)" : ""}` : "Could not save the draft.");
     }
   };

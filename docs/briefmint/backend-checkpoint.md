@@ -1,4 +1,4 @@
-> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+> **Current status (7 November 2026 IST):** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
 
 # BriefMint backend checkpoint
 
@@ -49,7 +49,7 @@ Run the Vite/Next cookie journey in a browser using [the local integration runbo
 
 The user still controls account selection and live authorization. No push, merge, deployment or broadcast is part of this checkpoint.
 
-## Part 1 — backend core and guarded live-probe readiness
+## Part 1: backend core and guarded live-probe readiness
 
 6 November 2026, IST. Implementation commit: `1ebeeab`, based on clean `3e26a65` on `codex/payment-backend`. This note supersedes earlier descriptions of the city integration as uncommitted/absent; the history above is retained. Overall PRD estimate remains **67%**: this part closes safety/readiness defects without claiming new live or browser evidence.
 
@@ -70,7 +70,7 @@ Targeted verification: **67 passed across six BriefMint test files** (`brief-aut
 
 Historical 0G blocker: the first operator POST returned HTTP 502 / `PROVIDER_UNAVAILABLE` after 1,827 ms, with unknown debit and no preserved upstream identifiers. The operator later reported one successful standalone response (HTTP 200, 9,133 ms, valid structure, 668 reported tokens, request/model identifiers) but `routerVerification` and `routingTier` were null. This proves one response was generated, not the app workflow, continuing capacity, actual debit, promotional-credit source or independent verification. A new potentially billable request needs new explicit user authorization. No wallet signature, Arkiv write, deployment or push occurred. **READY FOR PART 2.**
 
-## Part 2 — Arkiv lifecycle, independent reader and Agent B boundary
+## Part 2: Arkiv lifecycle, independent reader and Agent B boundary
 
 6 November 2026, IST. Implementation commit **`42258e1`**, based on clean Part 1 `d90cb1e`. Backend code now distinguishes prepared/unknown/submitted/reverted pending outcomes, with historical state defaulting to unknown. Null/null reconciliation atomically arms one wallet attempt; competing/repeated arms and re-preparing uncertain intents return 409. Known-hash reconciliation remains recoverable across disk restart and preserves newer private edits and the last confirmed entity. Unbound reverted receipts remain locked, not silently cancelled; rejection before arming retains the prepared intent, and there is no safe cancellation/replacement endpoint after uncertainty.
 
@@ -80,7 +80,7 @@ The executable `scripts/briefmint-arkiv-reader.ts` reads without API, SQLite, co
 
 Acceptance status: **BM-09/BM-11** backend intent/receipt/readback/update/close locally verified; **BM-10/BM-12** indexed discovery/native expiry code locally verified but live network behavior unproven; **BM-14** standalone reader implemented/offline verified with no real record proof; **BM-15** existing city wiring retained, with required mutation-epoch, durable-identifier and prepare/atomic-arm signing changes explicitly assigned to B. [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md) contains exact routes, contracts, commands and a forwardable message; [ARKIV_LIVE_PROBE.md](ARKIV_LIVE_PROBE.md) contains the later human-authorized lifecycle/independence procedure. Live create/query/update/close/native expiry and stopped-backend independent reading still need real owner/entity/transaction evidence. Overall estimate **68%** (one point for the runnable reader/runbooks; zero new live-proof credit). **READY FOR PART 3**, with B integration and all live gates explicitly outstanding.
 
-## Part 3 — final offline verification and human last mile
+## Part 3: final offline verification and human last mile
 
 6 November 2026, IST. Code/runbook commit **`c814af7`**, following `03bbaa8` and the Part 1/2 implementation commits. Initial tree was clean with no teammate changes. The final pass adds [the MOCK vertical-slice test](../../tests/server/brief-vertical-slice.test.ts) and strengthens [the local process smoke](../../scripts/smoke-production.ts) with an explicit environment allowlist and the actual Vite proxy configuration (only isolated ports/target overridden, env-file loading disabled). It proves Cookie/Set-Cookie/Origin forwarding and standalone process restart using a disposable SQLite database. It sends zero external inference/chain requests. Loopback HTTP and a Secure cookie attribute do not establish browser wallet behavior or real TLS.
 
@@ -135,7 +135,7 @@ Vite lint was skipped because `apps/web/package.json` defines no lint command. R
 
 Production HTTPS/one-process/persistent SQLite evidence, asset attribution/license checks, intended-user feedback, actual URLs, video under three minutes and ETHGlobal submission remain human/operator work. The final runbook is [LIVE_VALIDATION_AND_SUBMISSION.md](LIVE_VALIDATION_AND_SUBMISSION.md); [DEMO_NOTES.md](DEMO_NOTES.md) contains synthetic input and truthful claims. [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md) contains the single forwardable message; [0G_LIVE_PROBE.md](0G_LIVE_PROBE.md) and [ARKIV_LIVE_PROBE.md](ARKIV_LIVE_PROBE.md) retain the precise consent gates. No new percentage, full-PRD completion, production readiness, push, merge, deployment, live inference or live wallet/Arkiv action is claimed.
 
-### Local integration follow-up — 6 November 2026
+### Local integration follow-up: 6 November 2026
 
 On local branch `codex/briefmint-integration-fixes` based on `codex/initial-readme` (`2fff1eb`), the current tree also adds client/server `x-briefmint-owner` binding for every private BriefMint route, wallet/session equality gating, cross-tab cookie mutation coordination with fail-closed logout retry, account-scoped query keys, exact approved-payload/publication-intent comparisons, pre-signing arm, append-only transaction-hash recovery, and paginated public reader results. This is a local integration branch; it has not been pushed. The required header is documented in [AGENT_B_FRONTEND_HANDOFF.md](AGENT_B_FRONTEND_HANDOFF.md). The server rejects absent/mismatched owner headers with `409 SESSION_OWNER_MISMATCH` before parsing a private body or running handlers.
 

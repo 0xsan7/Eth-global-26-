@@ -1,4 +1,4 @@
-> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+> **Current status (7 November 2026 IST):** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
 
 # BriefMint live validation and submission gate
 
@@ -48,7 +48,7 @@ Required configuration names (values supplied only in private operator files):
 | Browser Arkiv | `VITE_ARKIV_ACCESS_KEY` is a deliberately public endpoint-access value, never a wallet/inference secret; Vite loads it from `apps/web/.env.local` or the build environment, not automatically from root `.env.local` |
 | Process / legacy exclusion | `HOSTNAME=127.0.0.1`, `PORT=4100`, `NEXT_PUBLIC_ENABLE_DEV_FIXTURES=false`. No deployer/merchant/checkout/Whitechain key or funding is needed for BriefMint. |
 
-## 2. 0G inference — separate explicit consent required
+## 2. 0G inference: separate explicit consent required
 
 No inference command is authorized by this checklist. A human must separately approve one potentially billable request after reviewing current 0G account usage and the risk that a failure/timeout can still debit. Keep an ignored `.env.0g-smoke` containing the required values; never expose its contents. Check only its existence and ignore status, then restrict permissions:
 
@@ -68,7 +68,7 @@ It makes one inference POST, no retries. Never repeat it to repair a failure. Sa
 
 This isolated probe does not create an application brief. After it succeeds, a later app compilation is a separate potentially billable action: explicitly approve/configure its finite quota and runtime credential, then authorize one deliberate Studio run. Do not claim that a successful isolated probe also passed the application's complete journey.
 
-## 3. Browser wallet and Arkiv — later human operator only
+## 3. Browser wallet and Arkiv: later human operator only
 
 Do not begin until Agent B's frontend requirements are complete and reviewed: epoch guards for mutation completions, fresh server prepare before signing, one-shot uncertainty arming, durable intent/transaction identifiers, and honest state/error controls. A wallet operator must log in explicitly and separately approve each publication signature/fee. Login proves address control; it does not approve a publication. Check current readiness, Rabdi chain 7794095, connected account/intent owner, exact approved public bytes/hash, and recipient/operation in the wallet prompt. Use only a synthetic brief with a genuinely ready result already available; this checklist does not authorize paid inference or automatic compute.
 

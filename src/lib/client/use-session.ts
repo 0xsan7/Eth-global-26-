@@ -1,5 +1,5 @@
 "use client";
-// Session hooks: cookie session + wallet-signed login — Agent B owned.
+// Session hooks: cookie session + wallet-signed login: Agent B owned.
 // Flow: connect wallet -> GET challenge -> signMessage -> POST verify -> session
 // cookie. Switching accounts clears the previous buyer's private caches and ends
 // the old session; switching networks alone never logs out (see use-session
@@ -111,7 +111,7 @@ function clearPrivateCaches(queryClient: ReturnType<typeof useQueryClient>) {
 
 /**
  * Mount once inside the wallet provider (see ClientProviders). On wallet
- * account change — including disconnect — drop the previous buyer's private
+ * account change, including disconnect: drop the previous buyer's private
  * UI/query caches and end the old server session. Network switches alone do
  * not trigger this hook (it watches `address` only).
  */

@@ -68,5 +68,5 @@ export const DEV_FIXTURE_JOB: JobView = {
 };
 
 export function devFixturesEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_ENABLE_DEV_FIXTURES === "true";
+  return process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_ENABLE_DEV_FIXTURES === "true";
 }

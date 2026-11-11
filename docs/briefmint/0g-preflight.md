@@ -1,4 +1,4 @@
-> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+> **Current status (7 November 2026 IST):** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
 
 # 0G first-request preflight
 
@@ -37,7 +37,7 @@ The catalog describes thinking as enabled by default and warns that long non-str
 - Long default thinking could consume the first test's time/token allowance. Smoke-only parameters request non-thinking JSON with a smaller output limit after capability checks.
 - Adversarial metadata could echo a credential. Raw report values are checked before JSON serialization; local tests cover ordinary and escaped-character key echoes. Raw errors/content are never logged.
 
-## Exact safe setup — no inference
+## Exact safe setup: no inference
 
 Run locally from Terminal. Node must be 24.x; existing dependencies are already installed at the validated checkpoint.
 
@@ -69,7 +69,7 @@ INFERENCE_TIMEOUT_MS=180000
 
 No SESSION_SECRET, wallet, funding transaction, checkout configuration or Arkiv setup is required by this isolated smoke. Node's explicit `--env-file` handles loading; the script does not scan `.env.local` or any other file. Existing exported variables take precedence over Node env-file values; the smoke refuses a different base/model or out-of-range timeout. Run in a normal fresh Terminal without unrelated exported 0G overrides.
 
-## The single live command — wait for explicit authorization
+## The single live command: wait for explicit authorization
 
 ```sh
 node --env-file=.env.0g-smoke --conditions=react-server --import tsx scripts/briefmint-live-smoke.ts --authorize-paid-inference

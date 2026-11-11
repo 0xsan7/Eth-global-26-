@@ -1,4 +1,4 @@
-// Typed BriefMint fetch wrapper — Agent B owned, client-safe.
+// Typed BriefMint fetch wrapper: Agent B owned, client-safe.
 // Every call goes through the canonical `briefApi` registry in
 // ../shared/briefmint (frozen v1.2): method, path, request and response
 // shapes are validated with zod. Failures throw ApiError {status, code,

@@ -12,37 +12,37 @@ Target runtime: 2 minutes 30 seconds, maximum 3 minutes. Use only the already sa
 
 ## Timed sequence and spoken lines
 
-### 0:00–0:18 — City / product framing
+### 0:00–0:18: City / product framing
 
 **Screen:** Open the BriefMint view in the Pixi.js city; move to the BriefMint workflow without lingering on unrelated interface.
 
 **Say:** “BriefMint turns an organizer’s private working notes into a public opportunity only after the owner reviews and approves the exact public version.”
 
-### 0:18–0:43 — Private record and generated draft
+### 0:18–0:43: Private record and generated draft
 
 **Screen:** Show the already saved brief and genuine generated draft. Avoid revealing the original private notes or any sensitive-looking text. Point to the draft’s editable state and source-reference area.
 
 **Say:** “The source record lives in an access-controlled backend and is sent server-side to the configured 0G Router model for a structured proposal. Access-controlled does not mean end-to-end encrypted. This is a saved genuine result; I’m not making a new inference during the demo.”
 
-### 0:43–1:08 — Edit and approval boundary
+### 0:43–1:08: Edit and approval boundary
 
 **Screen:** Show the saved edited revision and approval/hash state. Highlight the exact public fields/preview. Do not click edit, approve, compile, or save.
 
 **Say:** “The model output is only a proposal. The owner can edit it, review the public projection, and approve a specific revision. Private source notes and internal references are not part of the published projection. A person still has to review the wording for accidental disclosure.”
 
-### 1:08–1:42 — Existing Arkiv record
+### 1:08–1:42: Existing Arkiv record
 
 **Screen:** Show the successful create receipt and entity details already captured in the UI or evidence file. Avoid opening wallet prompts. Show owner, chain, canonical hash, transaction and entity identity only if legible. The evidence document is authoritative if the UI does not show all fields.
 
 **Say:** “The owner approved and authorized this separate demo copy, which was created on Arkiv and read back. The transaction and entity identifiers, owner, chain, and canonical public hash are recorded in our evidence. The earlier R3 intent is still unresolved, so we do not retry it; this copy has its own approval and identity. That also means duplicate content is a known risk.”
 
-### 1:42–2:12 — Independent public read
+### 1:42–2:12: Independent public read
 
 **Screen:** Show a previously captured output from the standalone reader command below, or run a read-only query if already configured and safe. Do not include API cookies or private DB data. Network reads are read-only but can be rate-limited.
 
 **Say:** “This record can be read from the public Arkiv index without BriefMint’s application API, session, or SQLite database. The CLI reader is an independent access path, not proof of independent TEE verification.”
 
-### 2:12–2:30 — Limits and close
+### 2:12–2:30: Limits and close
 
 **Screen:** Return to the public record or project title. No writes.
 

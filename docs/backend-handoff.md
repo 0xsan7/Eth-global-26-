@@ -2,13 +2,18 @@
 
 # Backend handoff
 
-## Current verification follow-up — 6 November 2026
+## Current verification follow-up — 10 November 2026
 
-This update supersedes older local test counts, completion estimates, and app-layout notes below. It records offline verification only.
+This update supersedes older local check counts and records offline verification only. The UI pass changed presentation and production fixture gating; it did not change server routes, authentication, payment, contracts, inference, Arkiv writes, or database behavior.
 
-Current checks pass: `npm run lint`, `npm run typecheck`, `npm test` (**126 server tests and 27 UI tests**), `npm run test:contracts` (**5 simulated-chain tests**), and `npm run build`. `npm run smoke:local` passes with a temporary SQLite database and explicit credential-free environment. It covers the standalone app, the checkout-demo Vite `/api` proxy (including cookie and `Origin` forwarding), private brief operations, approval-gated public export, restart persistence, and fail-closed behavior. The smoke makes no external calls and dispatches no inference. The build has a nonfatal checkout-demo bundle-size warning.
+Current checks pass: `npm test` (19 server files / 182 tests; 157 UI tests), `npm run lint`, `npm run typecheck`, `npm run build`, and `npm run smoke:local`. The local smoke uses temporary SQLite and an explicit credential-free environment. It passes standalone assets, checkout-demo proxy cookie/Origin forwarding, legacy denial paths, BriefMint private CRUD/export, approval-gated publication refresh, restart/session persistence, and zero inference dispatches or external calls. The build retains the nonfatal 685.48 kB checkout-demo bundle warning and the existing `node:worker_threads` browser externalization warning.
 
-Release gates remain open: a successful authorized 0G inference with cost and quality validation; independent response verification; the real browser wallet journey; owner-authorized Arkiv create/query/update/close/expiry and independent readback; and HTTPS hosting with persistent-volume restart/restore evidence. Asset/dependency license review and submission evidence also remain outstanding. A previous operator-run inference returned HTTP 502 (`PROVIDER_UNAVAILABLE`) and billing is uncertain. No live inference, wallet signing, Arkiv write, or deployment is claimed here.
+Production browser checks covered `/opportunities` at 1440, 390, and 320 CSS px, `/briefs` at 320 px, and `/` at 390 px; none had horizontal overflow. Production rendered no development fixtures. The browser allowlist blocked public Arkiv RPC, and the UI showed `Could not reach Arkiv (unavailable)`, not an empty-catalogue claim. A same-origin development fixture run showed two labelled cards at 320 px (248 px each); detail close/reopen, click-inside, Escape, and dialog semantics worked. This is local fixture evidence only. No wallet, live Arkiv read/write, 0G call, or deployment was performed.
+
+Release gates remain open: an authorized 0G inference with cost/quality validation; independent response verification; the real browser wallet journey; owner-authorized Arkiv create/query/update/close/expiry and independent readback; HTTPS hosting with persistent-volume restart/restore evidence; and dependency/license review plus submission evidence. A previous operator-run inference returned HTTP 502 (`PROVIDER_UNAVAILABLE`) and billing is uncertain. No live inference, wallet signing, Arkiv write, or deployment is claimed here.
+
+Publishing status: implementation commit `fdcfbd5` is on `codex/ui-improvement` and was pushed successfully to `origin`. No PR or main merge was created; the literal requested branch name contains a space, so the valid repository-compliant ref is `codex/ui-improvement`.
+
 
 See [current checkpoint](briefmint/backend-checkpoint.md), [integration contract](briefmint/integration-contract.md), [teammate handoff](briefmint/agent-b-handoff.md) and [local setup/privacy runbook](briefmint/local-integration.md). Historical sections below retain their original counts and context.
 

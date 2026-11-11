@@ -27,7 +27,7 @@ interface BriefIntakeFormProps {
   onCreated: (brief: BriefView) => void;
 }
 
-const DEMO_NOTES = "Community launch notes (fixture — not live).\n\nKeep private details out of the public draft.";
+const DEMO_NOTES = "Community launch notes (fixture, not live).\n\nKeep private details out of the public draft.";
 
 function firstIssue(message: string): string {
   return message;
@@ -119,9 +119,9 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
         Rough notes stay private to you and the backend. Only approved public fields may be published.
       </p>
       <details className="hud-learn">
-        <summary>Learn more</summary>
+        <summary>About credits and privacy</summary>
         <p className="tc-muted">
-          Compilation is funded by promotional credits — no purchase, no bounty payout. Advertised budgets
+          Compilation is funded by promotional credits, no purchase, no bounty payout. Advertised budgets
           are unfunded: BriefMint never holds or moves funds. Source IDs and private details never leave
           the private brief; the public preview shows exactly what a publication would contain.
         </p>
@@ -172,14 +172,14 @@ export default function BriefIntakeForm({ onCreated }: BriefIntakeFormProps) {
       {error && <p className="error" role="alert">{error}</p>}
       {unavailable && (
         <p className="notice" role="status">
-          BriefMint backend unavailable (503) — the intake service is not deployed yet. Nothing was saved; no fixture was substituted.
+          BriefMint backend unavailable (503), the intake service is not deployed yet. Nothing was saved; no fixture was substituted.
         </p>
       )}
       <div className="btn-row">
         <button type="button" className="btn btn-primary" disabled={busy || !address || !!clientError} onClick={submit}>
           {busy ? "Saving…" : "Save private brief"}
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={() => setNotes(DEMO_NOTES)} title="Fixture — never live evidence">
+        <button type="button" className="btn" disabled={busy} onClick={() => setNotes(DEMO_NOTES)} title="Fixture, never live evidence">
           Load demo notes (fixture)
         </button>
       </div>

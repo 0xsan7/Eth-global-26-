@@ -136,10 +136,10 @@ export class BriefService {
         || JSON.stringify(current.editedDraft) !== JSON.stringify(brief.editedDraft)) throw conflict();
       return { filename: `brief-public-r${payload.revision}.${format}`, mediaType: format === "json" ? "application/json" : "text/plain",
         content: format === "json" ? canonicalPublicJson(payload)
-          : [`PUBLIC BRIEFMINT EXPORT — approved revision ${payload.revision}; advertised budget is unfunded`, canonicalPublicJson(payload)].join("\n\n") };
+          : [`PUBLIC BRIEFMINT EXPORT: approved revision ${payload.revision}; advertised budget is unfunded`, canonicalPublicJson(payload)].join("\n\n") };
     }
     return { filename: `brief-${brief.id}.${format}`, mediaType: format === "json" ? "application/json" : "text/plain",
-      content: format === "json" ? JSON.stringify(storedBriefView(brief), null, 2) : ["PRIVATE BRIEFMINT EXPORT — contains source and evidence",
+      content: format === "json" ? JSON.stringify(storedBriefView(brief), null, 2) : ["PRIVATE BRIEFMINT EXPORT: contains source and evidence",
         "Private notes", brief.inputSegments.map(s => s.text).join("\n\n"), "Original model result", JSON.stringify(brief.immutableModelResult, null, 2),
         "Saved candidate", JSON.stringify(brief.editedDraft, null, 2), "Evidence", JSON.stringify(brief.evidence, null, 2)].join("\n\n") };
   }

@@ -1,4 +1,4 @@
-// BriefMint UI adapter — canonical DTOs live in ./briefs.ts (frozen v1.2,
+// BriefMint UI adapter: canonical DTOs live in ./briefs.ts (frozen v1.2,
 // owned by the backend/integrator). This module NEVER redefines them: it
 // re-exports canonical types and adds only browser-view projections plus
 // tiny address aliases for component convenience.

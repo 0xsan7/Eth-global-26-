@@ -1,7 +1,7 @@
-// Typed fetch wrapper for the §6 HTTP contract — Agent B owned. Client-safe.
+// Typed fetch wrapper for the §6 HTTP contract: Agent B owned. Client-safe.
 // Every helper speaks the ApiResult<T> envelope with credentials:"same-origin"
-// and JSON bodies. Failures throw ApiError {code,message,retryable,status} —
-// never a raw HTML string — so UI can branch on 401/404/409/502/503 safely.
+// and JSON bodies. Failures throw ApiError {code,message,retryable,status}:
+// never a raw HTML string: so UI can branch on 401/404/409/502/503 safely.
 import type {
   ApiResult,
   ChallengeResponse,

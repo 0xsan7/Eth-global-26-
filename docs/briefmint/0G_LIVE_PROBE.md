@@ -1,10 +1,10 @@
-> **Current status — 7 November 2026 IST:** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
+> **Current status (7 November 2026 IST):** This engineering record retains historical instructions/checkpoints. For the integrated Next.js setup use the [README](../../README.md); for successful app generation and Arkiv create/read/discovery use [live evidence](../evidence/LIVE_DEMO.md). Earlier Vite-city, HTTP 502-only, no-publication and backend-branch claims are historical. Independent TEE proof and live update/close/expiry remain unverified; do not retry the original unknown R3 intent.
 
-# BriefMint 0G live probe — operator gate
+# BriefMint 0G live probe: operator gate
 
 Part 1 baseline: `3e26a65`. The existing guarded entry point is `scripts/briefmint-live-smoke.ts`; it is improved here rather than replaced. The operator reports that `.env.0g-smoke` is locally configured, ignored and permission-restricted. The assistant has not opened the file, read or printed the key, or made an authenticated request.
 
-## Latest operator-reported live evidence — 6 November 2026
+## Latest operator-reported live evidence: 6 November 2026
 
 The operator reports one authorized standalone probe completed with HTTP 200 in 9,133 ms, valid structured output, 668 reported total tokens, request ID `077bd220-2efa-4bbd-bb1f-3b3964ff0038`, and returned model `0gm-1.0-35b-a3b`. Its status was `completed_evidence_incomplete`: `routerVerification` and `routingTier` were null. This overcomes the earlier HTTP 502 for this single probe, but it is not a BriefMint app generation and does not prove a debit amount or promotional-credit source. Independent provider-signature/signer/content verification remains unavailable in the implementation. No retry or second paid request is authorized by this update.
 
